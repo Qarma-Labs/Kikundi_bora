@@ -10,6 +10,12 @@ import {
   useCollectFine,
   obligationKeys,
 } from "@/hooks/use-obligations";
+import {
+  usePendingRepayments,
+  useApproveRepayment,
+  useRejectRepayment,
+  repaymentKeys,
+} from "@/hooks/use-repayments";
 import { groupsApi } from "@/api/groups";
 import { contributionsApi } from "@/api/contributions";
 import { tzs } from "@/lib/format";
@@ -137,7 +143,127 @@ function UkusanyajiPage() {
           ))}
         </div>
       )}
+      {/* Adjacent section: member-submitted loan repayments awaiting approval.
+          Kept separate from arrears/fines so the queues are never confused. */}
+      <div className="mt-8 max-w-3xl">
+        <PendingRepaymentsSection groupId={groupId} />
+      </div>
     </AppShell>
+  );
+}
+
+function PendingRepaymentsSection({ groupId }: { groupId: string | null }) {
+  const { showModal } = useAppModal();
+  const qc = useQueryClient();
+  const { data, isLoading } = usePendingRepayments(groupId);
+  const approve = useApproveRepayment();
+  const reject = useRejectRepayment();
+  const [rejectFor, setRejectFor] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+
+  const rows = data?.data ?? [];
+  const refresh = () => qc.invalidateQueries({ queryKey: repaymentKeys.all });
+
+  const doApprove = (id: string, label: string) =>
+    showModal({
+      title: "Thibitisha Marejesho?",
+      message: `Unathibitisha umepokea ${label}. Salio la mkopo litapungua mara moja.`,
+      variant: "warning",
+      primaryLabel: "Nimethibitisha",
+      secondaryLabel: "Ghairi",
+      onPrimary: () =>
+        approve.mutate(id, {
+          onSuccess: (res) => {
+            refresh();
+            showModal({ title: "Imefanikiwa", message: res.message, variant: "success", primaryLabel: "Sawa" });
+          },
+          onError: (e: Error) =>
+            showModal({ title: "Hitilafu", message: e.message, variant: "error", primaryLabel: "Sawa" }),
+        }),
+    });
+
+  const doReject = (id: string) => {
+    if (!reason.trim()) return;
+    reject.mutate(
+      { id, reason: reason.trim() },
+      {
+        onSuccess: (res) => {
+          refresh();
+          setRejectFor(null);
+          setReason("");
+          showModal({ title: "Imekataliwa", message: res.message, variant: "success", primaryLabel: "Sawa" });
+        },
+        onError: (e: Error) =>
+          showModal({ title: "Hitilafu", message: e.message, variant: "error", primaryLabel: "Sawa" }),
+      }
+    );
+  };
+
+  return (
+    <section className="card-surface p-4" data-testid="pending-repayments">
+      <h3 className="font-display text-sm font-semibold">Marejesho Yanayosubiri</h3>
+      <p className="text-xs text-muted-foreground">Malipo yaliyowasilishwa na wanachama — thibitisha kupokea au kataa na sababu.</p>
+      {isLoading ? (
+        <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+      ) : rows.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Hakuna marejesho yanayosubiri.</p>
+      ) : (
+        <div className="mt-3 space-y-2.5">
+          {rows.map((r) => (
+            <div key={r.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{r.member?.full_name ?? "Mwanachama"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.member?.member_no} · {tzs(Number(r.amount))} · {new Date(r.paid_at).toLocaleDateString()}
+                  </p>
+                  {r.proof_message && <p className="mt-1 text-xs text-muted-foreground">“{r.proof_message}”</p>}
+                </div>
+                <span className="chip bg-amber-100 text-amber-700 text-[10px]">Inasubiri</span>
+              </div>
+              {rejectFor === r.id ? (
+                <div className="mt-2 space-y-2">
+                  <input
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Sababu ya kukataa (lazima)…"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => doReject(r.id)}
+                      disabled={!reason.trim() || reject.isPending}
+                      className="rounded-lg bg-destructive px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Thibitisha kukataa
+                    </button>
+                    <button onClick={() => { setRejectFor(null); setReason(""); }} className="rounded-lg border px-3 py-1.5 text-xs">
+                      Ghairi
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => doApprove(r.id, `${r.member?.full_name ?? ""} — ${tzs(Number(r.amount))}`)}
+                    disabled={approve.isPending}
+                    className="inline-flex items-center gap-1 rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Thibitisha
+                  </button>
+                  <button
+                    onClick={() => { setRejectFor(r.id); setReason(""); }}
+                    className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive"
+                  >
+                    Kataa
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

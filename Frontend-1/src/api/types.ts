@@ -286,8 +286,42 @@ export interface Repayment {
   receipt_url?: string;
   notes?: string;
   created_at: string;
+  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  submitted_by?: string;
+  submitted_at?: string;
+  proof_image_url?: string;
+  proof_message?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  review_reason?: string;
   member?: Pick<Member, "id" | "member_no" | "full_name" | "phone">;
   recorder?: Pick<User, "id" | "name" | "role">;
+}
+
+export interface SubmitRepaymentRequest {
+  amount: number;
+  paid_at?: string;
+  payment_method?: "CASH" | "BANK" | "MOBILE_MONEY";
+  proof_image_url?: string;
+  proof_message?: string;
+  notes?: string;
+}
+
+export interface PendingRepayment {
+  id: string;
+  loan_id: string;
+  member_id: string;
+  amount: string | number;
+  paid_at: string;
+  payment_method: string;
+  proof_image_url?: string;
+  proof_message?: string;
+  notes?: string;
+  status: string;
+  submitted_at?: string;
+  created_at: string;
+  member?: { id: string; member_no: string; full_name: string; phone: string };
+  loan?: { id: string; amount?: string | number; approved_amount?: string | number; balance_remaining?: string | number; status?: string; due_date?: string };
 }
 
 export interface RecordRepaymentRequest {

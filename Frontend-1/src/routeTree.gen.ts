@@ -16,6 +16,7 @@ import { Route as WanachamaKusubiriRouteImport } from './routes/wanachama-kusubi
 import { Route as WanachamaRouteImport } from './routes/wanachama'
 import { Route as VitendoVinavyosubiriRouteImport } from './routes/vitendo-vinavyosubiri'
 import { Route as UkusanyajiRouteImport } from './routes/ukusanyaji'
+import { Route as TaarifaZaMarejeshoRouteImport } from './routes/taarifa-za-marejesho'
 import { Route as SajiliRouteImport } from './routes/sajili'
 import { Route as SahauRouteImport } from './routes/sahau'
 import { Route as RipotiRouteImport } from './routes/ripoti'
@@ -77,6 +78,11 @@ const VitendoVinavyosubiriRoute = VitendoVinavyosubiriRouteImport.update({
 const UkusanyajiRoute = UkusanyajiRouteImport.update({
   id: '/ukusanyaji',
   path: '/ukusanyaji',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TaarifaZaMarejeshoRoute = TaarifaZaMarejeshoRouteImport.update({
+  id: '/taarifa-za-marejesho',
+  path: '/taarifa-za-marejesho',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SajiliRoute = SajiliRouteImport.update({
@@ -237,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/ripoti': typeof RipotiRoute
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
+  '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -273,6 +280,7 @@ export interface FileRoutesByTo {
   '/ripoti': typeof RipotiRoute
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
+  '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -310,6 +318,7 @@ export interface FileRoutesById {
   '/ripoti': typeof RipotiRoute
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
+  '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -348,6 +357,7 @@ export interface FileRouteTypes {
     | '/ripoti'
     | '/sahau'
     | '/sajili'
+    | '/taarifa-za-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -384,6 +394,7 @@ export interface FileRouteTypes {
     | '/ripoti'
     | '/sahau'
     | '/sajili'
+    | '/taarifa-za-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -420,6 +431,7 @@ export interface FileRouteTypes {
     | '/ripoti'
     | '/sahau'
     | '/sajili'
+    | '/taarifa-za-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -457,6 +469,7 @@ export interface RootRouteChildren {
   RipotiRoute: typeof RipotiRoute
   SahauRoute: typeof SahauRoute
   SajiliRoute: typeof SajiliRoute
+  TaarifaZaMarejeshoRoute: typeof TaarifaZaMarejeshoRoute
   UkusanyajiRoute: typeof UkusanyajiRoute
   VitendoVinavyosubiriRoute: typeof VitendoVinavyosubiriRoute
   WanachamaRoute: typeof WanachamaRoute
@@ -521,6 +534,13 @@ declare module '@tanstack/react-router' {
       path: '/ukusanyaji'
       fullPath: '/ukusanyaji'
       preLoaderRoute: typeof UkusanyajiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/taarifa-za-marejesho': {
+      id: '/taarifa-za-marejesho'
+      path: '/taarifa-za-marejesho'
+      fullPath: '/taarifa-za-marejesho'
+      preLoaderRoute: typeof TaarifaZaMarejeshoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sajili': {
@@ -737,6 +757,7 @@ const rootRouteChildren: RootRouteChildren = {
   RipotiRoute: RipotiRoute,
   SahauRoute: SahauRoute,
   SajiliRoute: SajiliRoute,
+  TaarifaZaMarejeshoRoute: TaarifaZaMarejeshoRoute,
   UkusanyajiRoute: UkusanyajiRoute,
   VitendoVinavyosubiriRoute: VitendoVinavyosubiriRoute,
   WanachamaRoute: WanachamaRoute,

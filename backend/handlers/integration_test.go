@@ -59,6 +59,7 @@ func fullTestApp() *fiber.App {
 	loans.Post("/:id/disburse", middleware.RequirePosition(models.PositionTreasurer), loanHandler.Disburse)
 	loans.Patch("/:id/confirm-received", loanHandler.ConfirmReceived)
 	loans.Get("/:id/offset-preview", middleware.RequireRoles(models.RoleChair, models.RoleSecretary, models.RoleTreasurer), offsetHandler.Preview)
+	loans.Post("/:id/repayments", repayHandler.Submit)
 
 	// Sequential loan-approval chain (BUG-2 fix) — outside the leadership
 	// group so appointed bodi members can act on their turn.
@@ -77,11 +78,15 @@ func fullTestApp() *fiber.App {
 
 	repayments := protected.Group("/repayments")
 	repayments.Post("/", middleware.RequirePosition(models.PositionTreasurer), repayHandler.Record)
+	repayments.Patch("/:id/approve", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Approve)
+	repayments.Patch("/:id/reject", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Reject)
+
+	groups := protected.Group("/groups")
+	groups.Get("/:id/repayments", middleware.RequireRoles(models.RoleTreasurer), repayHandler.PendingQueue)
 
 	users := protected.Group("/users")
 	users.Post("/create", middleware.RequireRoles(models.RoleChair), userMgmtHandler.CreateUser)
 
-	groups := protected.Group("/groups")
 	loanSettings := groups.Group("/:id/loan-settings")
 	loanSettings.Get("/", loanSettingsHandler.Get)
 	loanSettings.Post("/propose", middleware.RequireRoles(models.RoleChair), loanSettingsHandler.Propose)

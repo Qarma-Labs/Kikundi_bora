@@ -167,7 +167,7 @@ function ChairmanView({
         <QuickAction to="/mikopo" icon={ShieldCheck} label="Idhinisha Mikopo" />
         <QuickAction to="/wanachama" icon={Users} label="Wanachama" />
         <QuickAction to="/ripoti" icon={TrendingUp} label="Tazama Ripoti" />
-        <QuickAction to="/marejesho" icon={Receipt} label="Marejesho" />
+        <QuickAction to="/taarifa-za-marejesho" icon={Receipt} label="Taarifa Za Marejesho" />
       </div>
     </>
   );
@@ -231,7 +231,7 @@ function TreasurerView({
       <SectionTitle>Kazi zako za leo</SectionTitle>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <QuickAction to="/michango" icon={PiggyBank} label="Pokea Mchango" />
-        <QuickAction to="/marejesho" icon={Receipt} label="Pokea Marejesho" />
+        <QuickAction to="/taarifa-za-marejesho" icon={Receipt} label="Pokea Marejesho" />
         <QuickAction to="/mikopo" icon={Wallet} label="Simamia Mikopo" />
       </div>
       {(hazinData.recent_disbursements ?? []).length > 0 && (

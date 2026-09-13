@@ -230,6 +230,8 @@ func main() {
 	chairAdmin := middleware.RequireRoles(models.RoleChair, models.RoleAdmin)
 	groups.Get("/:id/notification-settings", chairAdmin, handlers.GetNotificationSettings)
 	groups.Put("/:id/notification-settings", chairAdmin, handlers.UpdateNotificationSettings)
+	// Pending self-service repayments: treasurer's approval queue.
+	groups.Get("/:id/repayments", middleware.RequireRoles(models.RoleTreasurer), repayHandler.PendingQueue)
 
 	// Fine offence types: chair proposes, secretary approves.
 	offences := groups.Group("/:id/fine-offence-types")
@@ -322,6 +324,11 @@ func main() {
 	// BUG-5: borrower acknowledges receiving the disbursed loan.
 	loans.Patch("/:id/confirm-received", loanHandler.ConfirmReceived)
 
+	// Member self-service repayment (mirrors Weka Mchango): any authenticated
+	// member submits against their OWN disbursed loan (ownership enforced in
+	// handler); starts PENDING, moves money only on treasurer approval.
+	loans.Post("/:id/repayments", repayHandler.Submit)
+
 	// Loan offset (overdue debt paid from member savings): three-role check —
 	// mwenyekiti proposes, katibu approves/rejects, mweka-hazina executes.
 	// A plain mwanachama hits 403 on every one of these (RequireRoles).
@@ -338,6 +345,10 @@ func main() {
 	repayments := protected.Group("/repayments")
 	repayments.Get("/", repayHandler.List)
 	repayments.Post("/", middleware.RequirePosition(models.PositionTreasurer), repayHandler.Record)
+	// Self-service lifecycle (treasurer ONLY — same RBAC as contribution
+	// approval and fine collection: not mwenyekiti/katibu's action).
+	repayments.Patch("/:id/approve", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Approve)
+	repayments.Patch("/:id/reject", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Reject)
 
 	notifs := protected.Group("/notifications")
 	notifs.Get("/", notifHandler.List)
