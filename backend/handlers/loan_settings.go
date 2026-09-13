@@ -37,7 +37,7 @@ func validateLoanSettingsProposal(req loanSettingsProposeRequest) (bool, decimal
 	if req.InterestType != nil && *req.InterestType != "" {
 		itype = *req.InterestType
 	}
-	minDays, maxDays := 30, 365
+	minDays, maxDays := 14, 365
 	if req.MinTermDays != nil {
 		minDays = *req.MinTermDays
 	}

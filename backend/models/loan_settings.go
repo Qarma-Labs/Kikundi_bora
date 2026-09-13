@@ -34,7 +34,7 @@ type LoanSettings struct {
 
 	// Allowed loan term window, in days. Applications outside [min, max]
 	// are rejected at submission.
-	MinTermDays int `gorm:"not null;default:30" json:"min_term_days"`
+	MinTermDays int `gorm:"not null;default:14" json:"min_term_days"`
 	MaxTermDays int `gorm:"not null;default:365" json:"max_term_days"`
 
 	UpdatedBy *string `gorm:"type:uuid" json:"updated_by,omitempty"`

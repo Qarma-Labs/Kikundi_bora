@@ -40,7 +40,7 @@ export function LoanSettingsCard() {
     enabled: false,
     rate: "5",
     itype: "flat" as "flat" | "reducing",
-    minDays: "30",
+    minDays: "14",
     maxDays: "365",
   });
   const [rejectMode, setRejectMode] = useState(false);

@@ -74,7 +74,7 @@ func GetOrCreateLoanSettings(groupID string) (*models.LoanSettings, error) {
 		InterestEnabled:     false,
 		DefaultInterestRate: decimal.Zero,
 		InterestType:        models.LoanInterestFlat,
-		MinTermDays:         30,
+		MinTermDays:         14,
 		MaxTermDays:         365,
 	}
 	// decimal import for the zero default.
