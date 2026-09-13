@@ -171,6 +171,24 @@ jobs:
                 sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$POSTGRES_PASSWORD|" "$ENV_FILE"
                 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" "$ENV_FILE"
                 sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$ADMIN_PASSWORD|" "$ENV_FILE"
+                # Sentry: preserve a previously-configured DSN across .env rebuilds
+                # (empty DSN = Sentry stays silently disabled, same as local dev).
+                # Sample rate defaults to 0.2 in production (1.0 traces everything).
+                # NOTE: env_file values never appear in `docker inspect` output,
+                # so read them from the RUNNING container's runtime env instead.
+                RECOVERED_SENTRY_DSN="$(docker exec kikundi-backend printenv SENTRY_DSN 2>/dev/null || true)"
+                RECOVERED_SENTRY_TRACES="$(docker exec kikundi-backend printenv SENTRY_TRACES_SAMPLE_RATE 2>/dev/null || true)"
+                SENTRY_DSN="${SENTRY_DSN:-$RECOVERED_SENTRY_DSN}"
+                SENTRY_TRACES_SAMPLE_RATE="${SENTRY_TRACES_SAMPLE_RATE:-${RECOVERED_SENTRY_TRACES:-0.2}}"
+                export SENTRY_DSN SENTRY_TRACES_SAMPLE_RATE
+              fi
+              # Sentry keys must exist on EVERY deploy (not just rebuilds):
+              # append only if absent, set sample rate, but never overwrite
+              # an explicitly configured DSN already in the file.
+              grep -q '^SENTRY_DSN=' "$ENV_FILE" || printf '\n# Sentry error/tracing — set DSN to enable (empty = disabled)\nSENTRY_DSN=\n' >> "$ENV_FILE"
+              grep -q '^SENTRY_TRACES_SAMPLE_RATE=' "$ENV_FILE" || printf 'SENTRY_TRACES_SAMPLE_RATE=0.2\n' >> "$ENV_FILE"
+              if [ -z "$(sed -n 's/^SENTRY_DSN=//p' "$ENV_FILE" | head -n 1)" ] && [ -n "${SENTRY_DSN:-}" ]; then
+                sed -i "s|^SENTRY_DSN=.*|SENTRY_DSN=$SENTRY_DSN|" "$ENV_FILE"
               fi
               POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(sed -n 's/^DB_PASSWORD=//p' "$ENV_FILE" | head -n 1)}"
               [ -n "$POSTGRES_PASSWORD" ] || { echo "ERROR: DB_PASSWORD empty in $ENV_FILE"; exit 1; }

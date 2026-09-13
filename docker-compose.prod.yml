@@ -26,6 +26,12 @@
 services:
   backend:
     image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER must be set (lowercase github owner)}/kikundibora-backend:${TAG:-latest}
+    # Production identity (base compose defaults to development):
+    #  - Sentry events tag env=production (not development)
+    #  - Seed skips demo users (demo123 must never exist in production)
+    #  - Production-only hardening (e.g. HSTS) engages
+    environment:
+      ENVIRONMENT: "production"
     ports: !override
       - "127.0.0.1:${BACKEND_PORT:-5050}:8080"
 
