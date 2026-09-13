@@ -6,6 +6,7 @@ import (
 
 	"kikundibora/models"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +29,62 @@ func EnsureGroupSetup() {
 		log.Printf("Created default group %s (%s)", g.Name, g.ID)
 	}
 	EnsureFineSettingsForCurrentGroup()
+	EnsureLoanSettingsForCurrentGroup()
+}
+
+// EnsureLoanSettingsForCurrentGroup creates a disabled (interest-free)
+// LoanSettings row for the current group if none exists. Idempotent.
+func EnsureLoanSettingsForCurrentGroup() {
+	var g models.Group
+	if err := DB.First(&g).Error; err != nil {
+		return
+	}
+	if _, err := GetOrCreateLoanSettings(g.ID); err != nil {
+		log.Printf("ERROR: Failed to ensure loan settings: %v", err)
+	}
+}
+
+// GetOrCreateLoanSettings returns the group's LoanSettings, inserting
+// interest-free defaults (30–365 days, flat) when missing. Self-heals when
+// the table does not exist yet (same pattern as fine settings).
+func GetOrCreateLoanSettings(groupID string) (*models.LoanSettings, error) {
+	if !DB.Migrator().HasTable(&models.LoanSettings{}) {
+		if err := DB.AutoMigrate(&models.LoanSettings{}); err != nil {
+			return nil, err
+		}
+	}
+	var s models.LoanSettings
+	err := DB.Where("group_id = ?", groupID).First(&s).Error
+	if err == nil {
+		return &s, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err2 := DB.AutoMigrate(&models.LoanSettings{}); err2 == nil {
+			if retry := DB.Where("group_id = ?", groupID).First(&s).Error; retry == nil {
+				return &s, nil
+			} else if !errors.Is(retry, gorm.ErrRecordNotFound) {
+				return nil, retry
+			}
+		} else {
+			return nil, err
+		}
+	}
+	s = models.LoanSettings{
+		GroupID:             groupID,
+		InterestEnabled:     false,
+		DefaultInterestRate: decimal.Zero,
+		InterestType:        models.LoanInterestFlat,
+		MinTermDays:         14,
+		MaxTermDays:         365,
+	}
+	// decimal import for the zero default.
+	if err := DB.Create(&s).Error; err != nil {
+		if err2 := DB.Where("group_id = ?", groupID).First(&s).Error; err2 != nil {
+			return nil, err
+		}
+		return &s, nil
+	}
+	return &s, nil
 }
 
 // EnsureFineSettingsForCurrentGroup creates a disabled FineSettings row for
@@ -83,6 +140,16 @@ func GetOrCreateFineSettings(groupID string) (*models.FineSettings, error) {
 		return &s, nil
 	}
 	return &s, nil
+}
+
+// GetCurrentLoanSettings returns the single deployment's loan settings,
+// creating interest-free defaults when missing.
+func GetCurrentLoanSettings() (*models.LoanSettings, error) {
+	g, err := GetCurrentGroup()
+	if err != nil {
+		return nil, err
+	}
+	return GetOrCreateLoanSettings(g.ID)
 }
 
 // GetCurrentGroup returns the single group row, creating it if missing.

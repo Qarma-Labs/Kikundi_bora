@@ -9,9 +9,11 @@ import (
 )
 
 // Loan portfolio aggregation — pure logic so totals are unit-testable.
-// NOTE on the loan model: there is NO interest rate and NO repayment
-// schedule table; "repaid" is derived (disbursed principal − remaining
-// balance) and repayment history lives in the repayments table.
+// Per-loan term/interest come from the loan's snapshot columns; "repaid" is
+// derived (total owed − remaining balance) and repayment history lives in
+// the repayments table. Schedule-based overdue is applied by the handler
+// (which has DB access); the due_date check here is the legacy fallback for
+// loans disbursed before schedules existed.
 
 // PortfolioLoan is one disbursed loan in the leadership portfolio view.
 type PortfolioLoan struct {
@@ -20,12 +22,18 @@ type PortfolioLoan struct {
 	MemberNo         string          `json:"member_no"`
 	FullName         string          `json:"full_name"`
 	Principal        decimal.Decimal `json:"principal"`          // approved (or requested) amount disbursed
-	AmountRepaid     decimal.Decimal `json:"amount_repaid"`      // principal − remaining
-	Outstanding      decimal.Decimal `json:"outstanding"`        // balance_remaining
+	AmountRepaid     decimal.Decimal `json:"amount_repaid"`      // total owed − remaining
+	Outstanding      decimal.Decimal `json:"outstanding"`        // balance_remaining (interest-inclusive)
 	Status           string          `json:"status"`             // OUTSTANDING | CLOSED
-	IsOverdue        bool            `json:"is_overdue"`         // OUTSTANDING and past due_date
+	IsOverdue        bool            `json:"is_overdue"`         // OUTSTANDING with a scheduled installment past due, unpaid
 	DisbursedAt      string          `json:"disbursed_at,omitempty"`
 	DueDate          string          `json:"due_date"`
+	TermDays         int             `json:"term_days"`
+	InterestEnabled  bool            `json:"interest_enabled"`
+	InterestType     string          `json:"interest_type,omitempty"`
+	InterestRate     decimal.Decimal `json:"interest_rate"`      // monthly % snapshot (0 when interest-free)
+	InterestAmount   decimal.Decimal `json:"interest_amount"`
+	TotalRepayment   decimal.Decimal `json:"total_repayment"`    // principal + interest
 }
 
 // LoanPortfolioSummary is the aggregate view over a set of disbursed loans.
@@ -73,7 +81,13 @@ func BuildLoanPortfolio(loans []models.Loan, today time.Time) LoanPortfolioSumma
 		if outstanding.LessThan(decimal.Zero) {
 			outstanding = decimal.Zero
 		}
-		repaid := principal.Sub(outstanding)
+		// Total owed tracks the snapshot (principal + interest); legacy rows
+		// predate the snapshot columns, so fall back to principal-only.
+		totalOwed := l.TotalRepayment
+		if totalOwed.LessThanOrEqual(decimal.Zero) {
+			totalOwed = principal
+		}
+		repaid := totalOwed.Sub(outstanding)
 		if repaid.LessThan(decimal.Zero) {
 			repaid = decimal.Zero
 		}
@@ -97,14 +111,20 @@ func BuildLoanPortfolio(loans []models.Loan, today time.Time) LoanPortfolioSumma
 		}
 
 		item := PortfolioLoan{
-			ID:          l.ID,
-			MemberID:    l.MemberID,
-			Principal:   principal,
-			AmountRepaid: repaid,
-			Outstanding: outstanding,
-			Status:      string(l.Status),
-			IsOverdue:   isOverdue,
-			DueDate:     l.DueDate.Format("2006-01-02"),
+			ID:              l.ID,
+			MemberID:        l.MemberID,
+			Principal:       principal,
+			AmountRepaid:    repaid,
+			Outstanding:     outstanding,
+			Status:          string(l.Status),
+			IsOverdue:       isOverdue,
+			DueDate:         l.DueDate.Format("2006-01-02"),
+			TermDays:        l.TermDays,
+			InterestEnabled: l.InterestEnabled,
+			InterestType:    l.InterestType,
+			InterestRate:    l.ApplicableInterestRate,
+			InterestAmount:  l.InterestAmount,
+			TotalRepayment:  totalOwed,
 		}
 		if l.DisbursedAt != nil {
 			item.DisbursedAt = l.DisbursedAt.Format("2006-01-02")

@@ -94,3 +94,71 @@ export const groupsApi = {
       data
     ),
 };
+
+// --- Loan settings (riba + muda) ---
+
+export interface LoanSettings {
+  id: string;
+  group_id: string;
+  interest_enabled: boolean;
+  /** Monthly percentage, e.g. "5.00" = 5% per month. Only meaningful when interest_enabled. */
+  default_interest_rate: string;
+  interest_type: "flat" | "reducing";
+  min_term_days: number;
+  max_term_days: number;
+  updated_at?: string;
+}
+
+export interface LoanSettingsProposal {
+  id: string;
+  group_id: string;
+  proposal_kind: string;
+  loan_interest_enabled?: boolean | null;
+  loan_default_interest_rate?: string | null;
+  loan_interest_type?: string | null;
+  loan_min_term_days?: number | null;
+  loan_max_term_days?: number | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  proposed_by: string;
+  rejection_reason?: string | null;
+  created_at: string;
+}
+
+export interface LoanSettingsResponse {
+  data: LoanSettings;
+  pending_proposal: LoanSettingsProposal | null;
+}
+
+export interface ProposeLoanSettingsRequest {
+  interest_enabled: boolean;
+  default_interest_rate?: number;
+  interest_type?: "flat" | "reducing";
+  min_term_days: number;
+  max_term_days: number;
+}
+
+export const loanSettingsApi = {
+  /** Any authenticated user — the application form needs min/max + rate. */
+  get: (groupId: string) =>
+    api.get<LoanSettingsResponse>(`/groups/${groupId}/loan-settings`),
+
+  /** Mwenyekiti (chair) only. */
+  propose: (groupId: string, data: ProposeLoanSettingsRequest) =>
+    api.post<{ message: string; data: LoanSettingsProposal }>(
+      `/groups/${groupId}/loan-settings/propose`,
+      data
+    ),
+
+  /** Katibu (secretary) only. */
+  approve: (groupId: string) =>
+    api.post<{ message: string; data: LoanSettings }>(
+      `/groups/${groupId}/loan-settings/approve`
+    ),
+
+  /** Katibu (secretary) only. */
+  reject: (groupId: string, reason: string) =>
+    api.post<{ message: string; data: LoanSettingsProposal }>(
+      `/groups/${groupId}/loan-settings/reject`,
+      { reason }
+    ),
+};

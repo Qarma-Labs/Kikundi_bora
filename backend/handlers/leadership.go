@@ -140,6 +140,14 @@ func (h *LeadershipHandler) PendingLoans(c *fiber.Ctx) error {
 			"member":        loan.Member,
 			"awaiting_role": stage,
 			"my_turn":       mine,
+			// Term + interest snapshot so every approval stage can decide
+			// on total cost, not just principal.
+			"term_days":                loan.TermDays,
+			"interest_enabled":         loan.InterestEnabled,
+			"interest_type":            loan.InterestType,
+			"applicable_interest_rate": loan.ApplicableInterestRate,
+			"interest_amount":          loan.InterestAmount,
+			"total_repayment":          loan.TotalRepayment,
 			// Approval trail timestamps (the pipeline chips in the UI)
 			"hazina_approved_at":      loan.HazinaApprovedAt,
 			"katibu_approved_at":      loan.KatibuApprovedAt,
@@ -376,6 +384,16 @@ func (h *LeadershipHandler) ApproveLoan(c *fiber.Ctx) error {
 			amt := req.ApprovedAmount
 			loan.ApprovedAmount = &amt
 		}
+		// Recompute interest on the APPROVED principal using the loan's
+		// snapshotted mode/rate (never the live group settings). Interest-free
+		// loans stay structurally at zero.
+		if loan.InterestEnabled {
+			loan.InterestAmount = services.CalcLoanInterest(
+				*loan.ApprovedAmount, loan.ApplicableInterestRate, loan.TermDays, loan.InterestType, true)
+		} else {
+			loan.InterestAmount = decimal.Zero
+		}
+		loan.TotalRepayment = loan.ApprovedAmount.Add(loan.InterestAmount)
 		loan.ReviewedBy = &userID
 		loan.ReviewedAt = &now
 	}

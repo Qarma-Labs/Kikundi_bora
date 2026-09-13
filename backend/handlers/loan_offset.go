@@ -29,11 +29,20 @@ func loanOutstandingOf(loan *models.Loan) decimal.Decimal {
 	return *loan.BalanceRemaining
 }
 
-// isOffsetEligible reuses the portfolio overdue rule: OUTSTANDING + past
-// due_date. No new default-detection mechanism is built here.
+// isOffsetEligible reuses the portfolio overdue rule: OUTSTANDING with a
+// scheduled installment past due and unpaid (schedule-based, never a bare
+// timer). Loans disbursed before schedules existed fall back to due_date.
 func isOffsetEligible(loan *models.Loan, today time.Time) bool {
-	return loan.Status == models.LoanOutstanding &&
-		dateOnlyOf(loan.DueDate).Before(dateOnlyOf(today))
+	if loan.Status != models.LoanOutstanding {
+		return false
+	}
+	var n int64
+	database.DB.Model(&models.LoanInstallment{}).
+		Where("loan_id = ?", loan.ID).Count(&n)
+	if n > 0 {
+		return loanScheduleOverdue(loan.ID, today)
+	}
+	return dateOnlyOf(loan.DueDate).Before(dateOnlyOf(today))
 }
 
 // memberSavingsGross sums confirmed AKIBA savings from both stores
@@ -90,6 +99,15 @@ type offsetPreview struct {
 	AvailableSavings  decimal.Decimal         `json:"available_savings"`
 	OffsetAmount      decimal.Decimal         `json:"offset_amount"`
 	ExistingProposal  *models.LoanOffsetTransaction `json:"existing_proposal,omitempty"`
+	// Term + interest context: Outstanding is ALWAYS interest-inclusive
+	// (balance_remaining tracks principal + snapshotted interest). For
+	// interest-free loans the interest fields are verifiably zero.
+	TermDays         int             `json:"term_days"`
+	InterestEnabled  bool            `json:"interest_enabled"`
+	InterestRate     decimal.Decimal `json:"interest_rate"`
+	InterestAmount   decimal.Decimal `json:"interest_amount"`
+	TotalRepayment   decimal.Decimal `json:"total_repayment"`
+	Principal        decimal.Decimal `json:"principal"`
 }
 
 // buildPreview loads the loan + member balances and computes the capped
@@ -100,6 +118,15 @@ func buildPreview(loanID string) (*models.Loan, *offsetPreview, int, string) {
 		return nil, nil, fiber.StatusNotFound, "Mkopo haujapatikana"
 	}
 	p := &offsetPreview{Eligible: true, Outstanding: loanOutstandingOf(&loan)}
+	p.TermDays = loan.TermDays
+	p.InterestEnabled = loan.InterestEnabled
+	p.InterestRate = loan.ApplicableInterestRate
+	p.InterestAmount = loan.InterestAmount
+	p.TotalRepayment = loan.TotalRepayment
+	p.Principal = loan.Amount
+	if loan.ApprovedAmount != nil {
+		p.Principal = *loan.ApprovedAmount
+	}
 	if loan.Status != models.LoanOutstanding {
 		p.Eligible = false
 		p.Reason = "Mkopo huu haupo wazi (hali: " + string(loan.Status) + ")"
@@ -344,6 +371,34 @@ func (h *LoanOffsetHandler) Execute(c *fiber.Ctx) error {
 	off.ExecutedAt = &now
 	if err := tx.Save(&off).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Imeshindikana kutekeleza"})
+	}
+	// Mirror the offset into the repayment schedule (oldest-due first), so
+	// the schedule, balance and offset stay consistent.
+	var installments []models.LoanInstallment
+	tx.Where("loan_id = ? AND status = ?", loan.ID, models.InstallmentPending).
+		Order("number ASC").Find(&installments)
+	remaining := amount
+	for i := range installments {
+		if remaining.LessThanOrEqual(decimal.Zero) {
+			break
+		}
+		inst := &installments[i]
+		owed := inst.TotalAmount.Sub(inst.PaidAmount)
+		if owed.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		pay := owed
+		if remaining.LessThan(owed) {
+			pay = remaining
+		}
+		inst.PaidAmount = inst.PaidAmount.Add(pay)
+		remaining = remaining.Sub(pay)
+		if inst.PaidAmount.GreaterThanOrEqual(inst.TotalAmount.Sub(decimal.NewFromFloat(0.001))) {
+			inst.Status = models.InstallmentPaid
+		}
+		if err := tx.Save(inst).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Imeshindikana kusasisha ratiba"})
+		}
 	}
 	loan.BalanceRemaining = &newBalance
 	loan.Status = newStatus

@@ -198,6 +198,16 @@ func main() {
 	settings.Post("/approve", middleware.RequireRoles(models.RoleSecretary), groupSettingsHandler.Approve)
 	settings.Post("/reject", middleware.RequireRoles(models.RoleSecretary), groupSettingsHandler.Reject)
 
+	// Group loan settings (riba + muda). Same proposal pattern: chair
+	// proposes, secretary approves/rejects. Reads are open to all members
+	// (the application form needs min/max + rate).
+	loanSettingsHandler := handlers.NewLoanSettingsHandler()
+	loanSettings := groups.Group("/:id/loan-settings")
+	loanSettings.Get("/", loanSettingsHandler.Get)
+	loanSettings.Post("/propose", middleware.RequireRoles(models.RoleChair), loanSettingsHandler.Propose)
+	loanSettings.Post("/approve", middleware.RequireRoles(models.RoleSecretary), loanSettingsHandler.Approve)
+	loanSettings.Post("/reject", middleware.RequireRoles(models.RoleSecretary), loanSettingsHandler.Reject)
+
 	// Onboarding: wizard resume status + completion flag (chair), and the
 	// member app-tour "seen" flag. Steps reuse the endpoints above.
 	onboardingHandler := handlers.NewOnboardingHandler()
@@ -220,6 +230,8 @@ func main() {
 	chairAdmin := middleware.RequireRoles(models.RoleChair, models.RoleAdmin)
 	groups.Get("/:id/notification-settings", chairAdmin, handlers.GetNotificationSettings)
 	groups.Put("/:id/notification-settings", chairAdmin, handlers.UpdateNotificationSettings)
+	// Pending self-service repayments: treasurer's approval queue.
+	groups.Get("/:id/repayments", middleware.RequireRoles(models.RoleTreasurer), repayHandler.PendingQueue)
 
 	// Fine offence types: chair proposes, secretary approves.
 	offences := groups.Group("/:id/fine-offence-types")
@@ -300,6 +312,7 @@ func main() {
 	loans.Get("/", loanHandler.List)
 	loans.Get("/portfolio", middleware.RequireRoles(models.RoleChair, models.RoleSecretary, models.RoleTreasurer), portfolioHandler.Portfolio)
 	loans.Get("/outstanding-report", middleware.RequireLeadership(models.LeadershipChair, models.LeadershipTreasurer, models.LeadershipSecretary), loanHandler.OutstandingReport)
+	loans.Get("/:id/schedule", loanHandler.Schedule)
 	loans.Get("/:id", loanHandler.Get)
 	loans.Post("/apply", loanHandler.Apply)
 	// BUG-2 fix: the ONLY approval path is the sequential chain
@@ -310,6 +323,11 @@ func main() {
 	loans.Post("/:id/disburse", middleware.RequirePosition(models.PositionTreasurer), loanHandler.Disburse)
 	// BUG-5: borrower acknowledges receiving the disbursed loan.
 	loans.Patch("/:id/confirm-received", loanHandler.ConfirmReceived)
+
+	// Member self-service repayment (mirrors Weka Mchango): any authenticated
+	// member submits against their OWN disbursed loan (ownership enforced in
+	// handler); starts PENDING, moves money only on treasurer approval.
+	loans.Post("/:id/repayments", repayHandler.Submit)
 
 	// Loan offset (overdue debt paid from member savings): three-role check —
 	// mwenyekiti proposes, katibu approves/rejects, mweka-hazina executes.
@@ -326,7 +344,12 @@ func main() {
 
 	repayments := protected.Group("/repayments")
 	repayments.Get("/", repayHandler.List)
-	repayments.Post("/", middleware.RequirePosition(models.PositionTreasurer), repayHandler.Record)
+	// NOTE: direct treasurer recording was removed — every repayment now
+	// flows submit (member) → approve (treasurer). No bypass path remains.
+	// Self-service lifecycle (treasurer ONLY — same RBAC as contribution
+	// approval and fine collection: not mwenyekiti/katibu's action).
+	repayments.Patch("/:id/approve", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Approve)
+	repayments.Patch("/:id/reject", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Reject)
 
 	notifs := protected.Group("/notifications")
 	notifs.Get("/", notifHandler.List)

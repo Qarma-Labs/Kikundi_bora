@@ -36,7 +36,9 @@ func cleanAllTables() {
 	for _, stmt := range []string{
 		"DELETE FROM loan_reviews",
 		"DELETE FROM repayments",
+		"DELETE FROM loan_installments",
 		"DELETE FROM loans",
+		"DELETE FROM loan_settings",
 		"DELETE FROM contribution_edits",
 		"DELETE FROM contributions",
 		"DELETE FROM member_contributions",

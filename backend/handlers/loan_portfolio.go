@@ -8,6 +8,7 @@ import (
 	"kikundibora/services"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -52,5 +53,42 @@ func (h *LoanPortfolioHandler) Portfolio(c *fiber.Ctx) error {
 	}
 
 	sum := services.BuildLoanPortfolio(loans, time.Now())
+
+	// Schedule-based overdue override: a loan WITH a generated schedule is
+	// overdue only when a scheduled installment is past due and unpaid —
+	// never off the bare due_date timer. Legacy loans without schedule rows
+	// keep the due_date fallback computed inside BuildLoanPortfolio.
+	today := time.Now().Truncate(24 * time.Hour)
+	ids := make([]string, 0, len(loans))
+	for _, l := range loans {
+		ids = append(ids, l.ID)
+	}
+	overdueIDs := map[string]struct{}{}
+	scheduledIDs := map[string]struct{}{}
+	if len(ids) > 0 {
+		var insts []models.LoanInstallment
+		database.DB.Where("loan_id IN ?", ids).Find(&insts)
+		for _, in := range insts {
+			scheduledIDs[in.LoanID] = struct{}{}
+			if in.DueDate.Before(today) && in.PaidAmount.LessThan(in.TotalAmount) {
+				overdueIDs[in.LoanID] = struct{}{}
+			}
+		}
+	}
+	if len(scheduledIDs) > 0 {
+		// Recompute the overdue aggregates from the corrected flags.
+		sum.TotalOverdue = decimal.Zero
+		sum.CountOverdue = 0
+		for i := range sum.Loans {
+			if _, hasSched := scheduledIDs[sum.Loans[i].ID]; hasSched {
+				_, od := overdueIDs[sum.Loans[i].ID]
+				sum.Loans[i].IsOverdue = od && sum.Loans[i].Status == string(models.LoanOutstanding)
+			}
+			if sum.Loans[i].IsOverdue {
+				sum.CountOverdue++
+				sum.TotalOverdue = sum.TotalOverdue.Add(sum.Loans[i].Outstanding)
+			}
+		}
+	}
 	return c.JSON(fiber.Map{"data": sum})
 }

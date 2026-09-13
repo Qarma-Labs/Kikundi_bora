@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   Loan,
   ApplyLoanRequest,
+  LoanInstallment,
   LoanWithRepayments,
   PaginatedResponse,
   OutstandingReportResponse,
@@ -21,6 +22,12 @@ export interface PortfolioLoan {
   is_overdue: boolean;
   disbursed_at?: string;
   due_date: string;
+  term_days: number;
+  interest_enabled: boolean;
+  interest_type?: string;
+  interest_rate: string;
+  interest_amount: string;
+  total_repayment: string;
 }
 
 export interface LoanPortfolioSummary {
@@ -67,6 +74,8 @@ export const loansApi = {
     return api.get<PaginatedResponse<Loan>>("/loans", q);
   },
   get: (id: string) => api.get<LoanWithRepayments>(`/loans/${id}`),
+  schedule: (id: string) =>
+    api.get<{ data: LoanInstallment[] }>(`/loans/${id}/schedule`),
   apply: (data: ApplyLoanRequest) =>
     api.post<{ message: string; data: Loan }>("/loans/apply", data),
   // NOTE (BUG-2 fix): the legacy direct-approve/reject endpoints were removed
@@ -109,6 +118,12 @@ export interface PendingApprovalLoan {
   katibu_approved_at?: string;
   bodi_approved_at?: string;
   mwenyekiti_approved_at?: string;
+  term_days: number;
+  interest_enabled: boolean;
+  interest_type?: string;
+  applicable_interest_rate: string | number;
+  interest_amount: string | number;
+  total_repayment: string | number;
 }
 
 // --- Loan offset (overdue debt paid from member savings) ---
@@ -122,6 +137,12 @@ export interface OffsetPreview {
   offsets_applied: string;
   available_savings: string;
   offset_amount: string;
+  term_days: number;
+  interest_enabled: boolean;
+  interest_rate: string;
+  interest_amount: string;
+  total_repayment: string;
+  principal: string;
   existing_proposal?: LoanOffset | null;
 }
 

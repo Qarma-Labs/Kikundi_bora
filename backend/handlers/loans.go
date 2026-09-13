@@ -103,9 +103,13 @@ func (h *LoanHandler) Get(c *fiber.Ctx) error {
 	var repayments []models.Repayment
 	database.DB.Where("loan_id = ?", loan.ID).Order("paid_at DESC").Find(&repayments)
 
+	var installments []models.LoanInstallment
+	database.DB.Where("loan_id = ?", loan.ID).Order("number ASC").Find(&installments)
+
 	return c.JSON(fiber.Map{
-		"data":       loan,
-		"repayments": repayments,
+		"data":         loan,
+		"repayments":   repayments,
+		"installments": installments,
 	})
 }
 
@@ -157,14 +161,59 @@ func (h *LoanHandler) Apply(c *fiber.Ctx) error {
 		})
 	}
 
-	dueDate, err := time.Parse("2006-01-02", req.DueDate)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Tarehe ya mwisho si sahihi"})
+	var dueDate time.Time
+	if req.TermDays != nil && *req.TermDays > 0 {
+		// Term wins; due date is derived below after settings load.
+		dueDate = time.Now()
+	} else {
+		if req.DueDate == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Muda wa mkopo (siku) au tarehe ya mwisho inahitajika"})
+		}
+		var err error
+		dueDate, err = time.Parse("2006-01-02", req.DueDate)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Tarehe ya mwisho si sahihi"})
+		}
+		if !dueDate.After(time.Now()) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Tarehe ya mwisho lazima iwe baadaye ya leo"})
+		}
 	}
 
-	if !dueDate.After(time.Now()) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Tarehe ya mwisho lazima iwe baadaye ya leo"})
+	// ---- Loan terms: group settings snapshot + term validation ------------
+	// The interest mode/rate is snapshotted from the group's loan_settings at
+	// application time and NEVER accepted from the client. Later group
+	// changes never alter this application (same principle as fines).
+	settings, err := database.GetCurrentLoanSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Imeshindikana kupata mipangilio ya mikopo"})
 	}
+	termDays := 0
+	if req.TermDays != nil && *req.TermDays > 0 {
+		termDays = *req.TermDays
+		// Term wins: anchor due date to the requested duration.
+		dueDate = time.Now().Truncate(24*time.Hour).AddDate(0, 0, termDays)
+	} else {
+		termDays = int(dueDate.Sub(time.Now()).Hours() / 24)
+		if termDays < 1 {
+			termDays = 1
+		}
+	}
+	if termDays < settings.MinTermDays || termDays > settings.MaxTermDays {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": fmt.Sprintf("Muda wa mkopo lazima uwe kati ya siku %d na %d (ulioomba: %d)", settings.MinTermDays, settings.MaxTermDays, termDays),
+		})
+	}
+	// Structural interest-free mode: no rate stored, no interest computed.
+	interestEnabled := settings.InterestEnabled
+	interestType := ""
+	interestRate := decimal.Zero
+	interestAmount := decimal.Zero
+	if interestEnabled {
+		interestType = settings.InterestType
+		interestRate = settings.DefaultInterestRate
+		interestAmount = services.CalcLoanInterest(req.Amount, interestRate, termDays, interestType, true)
+	}
+	totalRepayment := req.Amount.Add(interestAmount)
 
 	var activeCount int64
 	database.DB.Model(&models.Loan{}).
@@ -175,11 +224,17 @@ func (h *LoanHandler) Apply(c *fiber.Ctx) error {
 	}
 
 	loan := models.Loan{
-		MemberID: req.MemberID,
-		Amount:   req.Amount,
-		Purpose:  req.Purpose,
-		DueDate:  dueDate,
-		Status:   models.LoanPending,
+		MemberID:               req.MemberID,
+		Amount:                 req.Amount,
+		Purpose:                req.Purpose,
+		DueDate:                dueDate,
+		Status:                 models.LoanPending,
+		TermDays:               termDays,
+		InterestEnabled:        interestEnabled,
+		InterestType:           interestType,
+		ApplicableInterestRate: interestRate,
+		InterestAmount:         interestAmount,
+		TotalRepayment:         totalRepayment,
 	}
 
 	if err := database.DB.Create(&loan).Error; err != nil {
@@ -188,6 +243,8 @@ func (h *LoanHandler) Apply(c *fiber.Ctx) error {
 
 	services.LogAudit(c, &userID, models.AuditCreate, "loans", &loan.ID, nil, map[string]interface{}{
 		"member_id": req.MemberID, "amount": req.Amount, "due_date": req.DueDate, "status": "PENDING",
+		"term_days": termDays, "interest_enabled": interestEnabled,
+		"interest_rate": interestRate, "interest_amount": interestAmount, "total_repayment": totalRepayment,
 	})
 
 	// Notify all committee members (leaders + appointed)
@@ -359,14 +416,49 @@ func (h *LoanHandler) Disburse(c *fiber.Ctx) error {
 
 	now := time.Now()
 	bal := *loan.ApprovedAmount
+	// Total owed tracks principal + snapshotted interest (interest-free:
+	// total == principal). BalanceRemaining is therefore always
+	// interest-inclusive — offsets and repayments inherit this.
+	total := bal.Add(loan.InterestAmount)
+	termDays := loan.TermDays
+	termEnd := now.Truncate(24*time.Hour).AddDate(0, 0, termDays)
+	if termDays <= 0 {
+		// Legacy loan (pre-terms): anchor the term to the existing due date.
+		termDays = int(loan.DueDate.Sub(now).Hours() / 24)
+		if termDays < 1 {
+			termDays = 1
+		}
+		loan.TermDays = termDays
+		termEnd = loan.DueDate
+	}
 	loan.Status = models.LoanOutstanding
 	loan.DisbursedBy = &userID
 	loan.DisbursedAt = &now
-	loan.BalanceRemaining = &bal
+	loan.DueDate = termEnd
+	loan.BalanceRemaining = &total
+	loan.TotalRepayment = total
 
 	if err := tx.Save(&loan).Error; err != nil {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Imeshindikana kutolea mkopo"})
+	}
+
+	// Auto-generate the repayment schedule confined to the term (monthly-ish
+	// installments, last due exactly on the term end).
+	sched := services.BuildLoanSchedule(bal, loan.ApplicableInterestRate, termDays, loan.InterestType, loan.InterestEnabled, now)
+	for _, s := range sched {
+		inst := models.LoanInstallment{
+			LoanID:          loan.ID,
+			Number:          s.Number,
+			DueDate:         s.DueDate,
+			PrincipalAmount: s.Principal,
+			InterestAmount:  s.Interest,
+			TotalAmount:     s.Total,
+		}
+		if err := tx.Create(&inst).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Imeshindikana kutengeneza ratiba ya marejesho"})
+		}
 	}
 
 	if err := tx.Commit().Error; err != nil {
@@ -445,6 +537,30 @@ func (h *LoanHandler) ConfirmReceived(c *fiber.Ctx) error {
 		"Mkopaji amethibitisha kupokea mkopo wa TZS "+formatMoney(loan.Amount)+".", "")
 
 	return c.JSON(fiber.Map{"message": "Asante! Umethibitisha kupokea mkopo.", "data": loan})
+}
+
+	// Schedule returns the auto-generated repayment schedule for a loan.
+	// GET /api/v1/loans/:id/schedule — borrower (own) or leadership.
+func (h *LoanHandler) Schedule(c *fiber.Ctx) error {
+	id := c.Params("id")
+	role := middleware.GetUserRole(c)
+	userID := middleware.GetUserID(c)
+
+	var loan models.Loan
+	if err := database.DB.Select("id, member_id").First(&loan, "id = ?", id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Mkopo haujapatikana"})
+	}
+	if role == models.RoleMember {
+		var ownMember models.Member
+		if err := database.DB.Where("user_id = ? AND deleted_at IS NULL", userID).First(&ownMember).Error; err != nil || loan.MemberID != ownMember.ID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"message": "Huna ruhusa ya kuona mkopo huu"})
+		}
+	}
+
+	var installments []models.LoanInstallment
+	database.DB.Where("loan_id = ?", loan.ID).Order("number ASC").Find(&installments)
+
+	return c.JSON(fiber.Map{"data": installments})
 }
 
 func (h *LoanHandler) OutstandingReport(c *fiber.Ctx) error {

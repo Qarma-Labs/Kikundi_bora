@@ -27,6 +27,8 @@ func AutoMigrate() {
 		&models.PendingAction{},
 		&models.Group{},
 		&models.GroupSettingProposal{},
+		&models.LoanSettings{},
+		&models.LoanInstallment{},
 		&models.FineSettings{},
 		&models.Fine{},
 		&models.FineOffenceType{},
@@ -149,6 +151,10 @@ func addFKConstraints() {
 		{"loans", "fk_loans_member", "member_id", "members", "id", "RESTRICT"},
 		{"loans", "fk_loans_reviewer", "reviewed_by", "users", "id", "SET NULL"},
 		{"loans", "fk_loans_disburser", "disbursed_by", "users", "id", "SET NULL"},
+		// LoanInstallment → Loan
+		{"loan_installments", "fk_loan_installments_loan", "loan_id", "loans", "id", "CASCADE"},
+		// LoanSettings → Group
+		{"loan_settings", "fk_loan_settings_group", "group_id", "groups", "id", "CASCADE"},
 		// Repayment → Loan, Member, User
 		{"repayments", "fk_repayments_loan", "loan_id", "loans", "id", "RESTRICT"},
 		{"repayments", "fk_repayments_member", "member_id", "members", "id", "RESTRICT"},
