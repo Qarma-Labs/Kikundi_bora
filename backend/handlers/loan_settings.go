@@ -112,8 +112,9 @@ func (h *LoanSettingsHandler) Propose(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": msg})
 	}
 
-	// One PENDING proposal per group across ALL kinds.
-	if existing := loadPendingProposal(g.ID); existing != nil {
+	// One PENDING loan proposal at a time (other kinds are independent —
+	// a pending contribution proposal must not block loan settings).
+	if existing := loadPendingProposalOfKind(g.ID, models.ProposalKindLoan); existing != nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Kuna pendekezo lililopo bado halijajibiwa. Katibu lazima alijibu kwanza kabla ya pendekezo jipya.",
 			"data":    existing,
