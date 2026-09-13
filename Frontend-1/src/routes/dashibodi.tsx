@@ -36,6 +36,7 @@ import {
   Settings,
   CalendarDays,
   Gift,
+  BadgeCheck,
 } from "lucide-react";
 import {
   useWelfareEvents,
@@ -232,6 +233,7 @@ function TreasurerView({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <QuickAction to="/michango" icon={PiggyBank} label="Pokea Mchango" />
         <QuickAction to="/taarifa-za-marejesho" icon={Receipt} label="Pokea Marejesho" />
+        <QuickAction to="/thibitisha-marejesho" icon={BadgeCheck} label="Thibitisha Marejesho" />
         <QuickAction to="/mikopo" icon={Wallet} label="Simamia Mikopo" />
       </div>
       {(hazinData.recent_disbursements ?? []).length > 0 && (

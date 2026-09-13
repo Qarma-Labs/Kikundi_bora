@@ -16,6 +16,7 @@ import { Route as WanachamaKusubiriRouteImport } from './routes/wanachama-kusubi
 import { Route as WanachamaRouteImport } from './routes/wanachama'
 import { Route as VitendoVinavyosubiriRouteImport } from './routes/vitendo-vinavyosubiri'
 import { Route as UkusanyajiRouteImport } from './routes/ukusanyaji'
+import { Route as ThibitishaMarejeshoRouteImport } from './routes/thibitisha-marejesho'
 import { Route as TaarifaZaMarejeshoRouteImport } from './routes/taarifa-za-marejesho'
 import { Route as SajiliRouteImport } from './routes/sajili'
 import { Route as SahauRouteImport } from './routes/sahau'
@@ -78,6 +79,11 @@ const VitendoVinavyosubiriRoute = VitendoVinavyosubiriRouteImport.update({
 const UkusanyajiRoute = UkusanyajiRouteImport.update({
   id: '/ukusanyaji',
   path: '/ukusanyaji',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThibitishaMarejeshoRoute = ThibitishaMarejeshoRouteImport.update({
+  id: '/thibitisha-marejesho',
+  path: '/thibitisha-marejesho',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TaarifaZaMarejeshoRoute = TaarifaZaMarejeshoRouteImport.update({
@@ -244,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
   '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
+  '/thibitisha-marejesho': typeof ThibitishaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -281,6 +288,7 @@ export interface FileRoutesByTo {
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
   '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
+  '/thibitisha-marejesho': typeof ThibitishaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -319,6 +327,7 @@ export interface FileRoutesById {
   '/sahau': typeof SahauRoute
   '/sajili': typeof SajiliRoute
   '/taarifa-za-marejesho': typeof TaarifaZaMarejeshoRoute
+  '/thibitisha-marejesho': typeof ThibitishaMarejeshoRoute
   '/ukusanyaji': typeof UkusanyajiRoute
   '/vitendo-vinavyosubiri': typeof VitendoVinavyosubiriRoute
   '/wanachama': typeof WanachamaRoute
@@ -358,6 +367,7 @@ export interface FileRouteTypes {
     | '/sahau'
     | '/sajili'
     | '/taarifa-za-marejesho'
+    | '/thibitisha-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/sahau'
     | '/sajili'
     | '/taarifa-za-marejesho'
+    | '/thibitisha-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -432,6 +443,7 @@ export interface FileRouteTypes {
     | '/sahau'
     | '/sajili'
     | '/taarifa-za-marejesho'
+    | '/thibitisha-marejesho'
     | '/ukusanyaji'
     | '/vitendo-vinavyosubiri'
     | '/wanachama'
@@ -470,6 +482,7 @@ export interface RootRouteChildren {
   SahauRoute: typeof SahauRoute
   SajiliRoute: typeof SajiliRoute
   TaarifaZaMarejeshoRoute: typeof TaarifaZaMarejeshoRoute
+  ThibitishaMarejeshoRoute: typeof ThibitishaMarejeshoRoute
   UkusanyajiRoute: typeof UkusanyajiRoute
   VitendoVinavyosubiriRoute: typeof VitendoVinavyosubiriRoute
   WanachamaRoute: typeof WanachamaRoute
@@ -534,6 +547,13 @@ declare module '@tanstack/react-router' {
       path: '/ukusanyaji'
       fullPath: '/ukusanyaji'
       preLoaderRoute: typeof UkusanyajiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/thibitisha-marejesho': {
+      id: '/thibitisha-marejesho'
+      path: '/thibitisha-marejesho'
+      fullPath: '/thibitisha-marejesho'
+      preLoaderRoute: typeof ThibitishaMarejeshoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/taarifa-za-marejesho': {
@@ -758,6 +778,7 @@ const rootRouteChildren: RootRouteChildren = {
   SahauRoute: SahauRoute,
   SajiliRoute: SajiliRoute,
   TaarifaZaMarejeshoRoute: TaarifaZaMarejeshoRoute,
+  ThibitishaMarejeshoRoute: ThibitishaMarejeshoRoute,
   UkusanyajiRoute: UkusanyajiRoute,
   VitendoVinavyosubiriRoute: VitendoVinavyosubiriRoute,
   WanachamaRoute: WanachamaRoute,
