@@ -19,6 +19,7 @@ backups/
 *.db
 *.sql
 !backend/ledger/schema.sql
+!backend/migrations/BASELINE_PROD.sql
 
 # Frontend
 node_modules/
