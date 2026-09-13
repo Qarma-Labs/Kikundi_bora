@@ -52,7 +52,12 @@ function MarejeshoPage() {
   const activeLoan = myLoans.find((l) => l.status === "OUTSTANDING") ?? myLoans[0] ?? null;
 
   const { data: historyData, isLoading: historyLoading } = useRepayments({ limit: 200 });
-  const history = historyData?.data ?? [];
+  // Member view is strictly own-only: leadership roles (e.g. katibu) must
+  // NOT see other members' repayments here (taarifa page is the only
+  // group-wide view).
+  const history = (historyData?.data ?? []).filter(
+    (r) => !myMemberId || r.member_id === myMemberId
+  );
 
   return (
     <AppShell

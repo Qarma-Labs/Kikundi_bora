@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
-import { useRepayments, useRecordRepayment } from "@/hooks/use-repayments";
+import { useRepayments, useRecordRepayment, usePendingRepayments, useApproveRepayment, useRejectRepayment } from "@/hooks/use-repayments";
 import { useLoans } from "@/hooks/use-loans";
 import { useAuth } from "@/lib/auth-provider";
+import { useAppModal } from "@/components/AppModal";
+import { groupsApi } from "@/api/groups";
 import { Field } from "@/components/Field";
 import { tzs, tarehe } from "@/lib/format";
 import { blockAdminFromPage, requireAuth } from "@/lib/role-guards";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, X, Receipt, Loader2, Wallet, MessageSquare } from "lucide-react";
+import { Plus, X, Receipt, Loader2, Wallet, MessageSquare, Check, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/taarifa-za-marejesho")({
   beforeLoad: () => { requireAuth(); blockAdminFromPage(); },
@@ -41,6 +44,8 @@ function TaarifaZaMarejeshoPage() {
         <p className="mt-1 font-display text-3xl font-extrabold text-success">{tzs(jumla)}</p>
         <p className="mt-1 text-xs text-muted-foreground">{repayments.length} malipo</p>
       </div>
+
+      {isHazina && <PendingReceiptSection />}
 
       {isLoading && (
         <div className="mt-4 space-y-2.5">
@@ -91,6 +96,126 @@ function TaarifaZaMarejeshoPage() {
 
       {open && isHazina && <Form onClose={() => setOpen(false)} />}
     </AppShell>
+  );
+}
+
+function PendingReceiptSection() {
+  const { showModal } = useAppModal();
+  const [rejectFor, setRejectFor] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+
+  const { data: gs } = useQuery({
+    queryKey: ["groups", "current"],
+    queryFn: () => groupsApi.current(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data, isLoading, refetch } = usePendingRepayments(gs?.data.id ?? null);
+  const approve = useApproveRepayment();
+  const reject = useRejectRepayment();
+  const rows = data?.data ?? [];
+
+  const refresh = () => {
+    refetch();
+  };
+
+  return (
+    <div className="card-surface mt-4 p-5" data-testid="pending-receipts">
+      <h2 className="font-display text-sm font-semibold">Pokea Marejesho Yaliyotumwa ({rows.length})</h2>
+      <p className="text-xs text-muted-foreground">Malipo ya wanachama yanayosubiri uthibitisho wako — salio litapungua ukithibitisha.</p>
+      {isLoading ? (
+        <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+      ) : rows.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Hakuna marejesho yanayosubiri.</p>
+      ) : (
+        <div className="mt-3 space-y-2.5">
+          {rows.map((r) => (
+            <div key={r.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{r.member?.full_name ?? "Mwanachama"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.member?.member_no} · {tzs(Number(r.amount))} · {tarehe(r.paid_at)}
+                  </p>
+                  {r.proof_message && <p className="mt-1 text-xs text-muted-foreground">“{r.proof_message}”</p>}
+                </div>
+                <span className="chip bg-amber-100 text-amber-700 text-[10px] inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Inasubiri
+                </span>
+              </div>
+              {rejectFor === r.id ? (
+                <div className="mt-2 space-y-2">
+                  <input
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Sababu ya kukataa (lazima)…"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() =>
+                        reject.mutate(
+                          { id: r.id, reason: reason.trim() },
+                          {
+                            onSuccess: (res) => {
+                              refresh();
+                              setRejectFor(null);
+                              setReason("");
+                              showModal({ title: "Imekataliwa", message: res.message, variant: "success", primaryLabel: "Sawa" });
+                            },
+                            onError: (e: Error) =>
+                              showModal({ title: "Hitilafu", message: e.message, variant: "error", primaryLabel: "Sawa" }),
+                          }
+                        )
+                      }
+                      disabled={!reason.trim() || reject.isPending}
+                      className="rounded-lg bg-destructive px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Thibitisha kukataa
+                    </button>
+                    <button onClick={() => { setRejectFor(null); setReason(""); }} className="rounded-lg border px-3 py-1.5 text-xs">
+                      Ghairi
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() =>
+                      showModal({
+                        title: "Pokea Marejesho?",
+                        message: `Unathibitisha umepokea ${tzs(Number(r.amount))} kutoka ${r.member?.full_name ?? "mwanachama"}. Salio litapungua mara moja.`,
+                        variant: "warning",
+                        primaryLabel: "Nimepokea",
+                        secondaryLabel: "Ghairi",
+                        onPrimary: () =>
+                          approve.mutate(r.id, {
+                            onSuccess: (res) => {
+                              refresh();
+                              showModal({ title: "Imefanikiwa", message: res.message, variant: "success", primaryLabel: "Sawa" });
+                            },
+                            onError: (e: Error) =>
+                              showModal({ title: "Hitilafu", message: e.message, variant: "error", primaryLabel: "Sawa" }),
+                          }),
+                      })
+                    }
+                    disabled={approve.isPending}
+                    className="inline-flex items-center gap-1 rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Pokea
+                  </button>
+                  <button
+                    onClick={() => { setRejectFor(r.id); setReason(""); }}
+                    className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive"
+                  >
+                    Kataa
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
