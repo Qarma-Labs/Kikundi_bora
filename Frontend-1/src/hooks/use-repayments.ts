@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { repaymentsApi } from "@/api/repayments";
-import type { RecordRepaymentRequest, SubmitRepaymentRequest } from "@/api/types";
+import type { SubmitRepaymentRequest } from "@/api/types";
 
 export const repaymentKeys = {
   all: ["repayments"] as const,
@@ -19,16 +19,6 @@ export function useRepayments(params?: {
   return useQuery({
     queryKey: repaymentKeys.list(params as Record<string, unknown>),
     queryFn: () => repaymentsApi.list(params),
-  });
-}
-
-export function useRecordRepayment() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: RecordRepaymentRequest) =>
-      repaymentsApi.record(data),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: repaymentKeys.all }),
   });
 }
 

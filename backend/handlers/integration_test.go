@@ -77,7 +77,7 @@ func fullTestApp() *fiber.App {
 	committee.Post("/members", middleware.RequireRoles(models.RoleChair), committeeHandler.AppointMember)
 
 	repayments := protected.Group("/repayments")
-	repayments.Post("/", middleware.RequirePosition(models.PositionTreasurer), repayHandler.Record)
+	// NOTE: direct recording removed in production — submit → approve only.
 	repayments.Patch("/:id/approve", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Approve)
 	repayments.Patch("/:id/reject", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Reject)
 
@@ -227,7 +227,7 @@ func TestLoanLifecycleHTTP(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("apply: %d", code)
 	}
-loanID := hExtract(t, d, "data")
+	loanID := hExtract(t, d, "data")
 	t.Logf("Loan: %s", loanID)
 
 	// Appoint bodi FIRST so unanimous needs 4 (3 leaders + asha).
@@ -265,20 +265,29 @@ loanID := hExtract(t, d, "data")
 		t.Fatalf("disburse: %d", code)
 	}
 
-	// Step 5: Repay
-	code, d = hPost(t, app, "/api/v1/repayments", map[string]interface{}{
-		"loan_id": loanID, "amount": 200000.0, "paid_at": "2026-07-11", "payment_method": "CASH",
-	}, treasurer)
+	// Step 5: Repay via self-service (submit as borrower -> treasurer
+	// approves -> CLOSED). Link the seed member to asha's login first.
+	var ashaUser models.User
+	database.DB.Where("email = ?", "asha@kikundi.tz").First(&ashaUser)
+	database.DB.Model(&models.Member{}).Where("id = ?", memberID).Update("user_id", ashaUser.ID)
+	borrowerTok := hLogin(t, app, "asha@kikundi.tz", "demo123")
+	code, d = hPost(t, app, "/api/v1/loans/"+loanID+"/repayments", map[string]interface{}{
+		"amount": 200000.0, "proof_message": "CASH handed to treasurer",
+	}, borrowerTok)
 	if code != 201 {
-		t.Fatalf("repay: %d %s", code, d)
+		t.Fatalf("repay submit: %d %s", code, d)
 	}
-	var rr struct {
-		Data struct {
-			LoanClosed bool `json:"loan_closed"`
-		} `json:"data"`
+	var sub struct {
+		Data models.Repayment `json:"data"`
 	}
-	json.Unmarshal(d, &rr)
-	if !rr.Data.LoanClosed {
+	json.Unmarshal(d, &sub)
+	code, d = hPatch(t, app, "/api/v1/repayments/"+sub.Data.ID+"/approve", treasurer, nil)
+	if code != 200 {
+		t.Fatalf("repay approve: %d %s", code, d)
+	}
+	var closed models.Loan
+	database.DB.First(&closed, "id = ?", loanID)
+	if closed.Status != models.LoanClosed {
 		t.Error("loan not closed")
 	}
 	t.Log("Full HTTP loan lifecycle: PENDING -> APPROVED -> OUTSTANDING -> CLOSED")
@@ -296,7 +305,11 @@ func TestNegativeScenarios(t *testing.T) {
 
 	// Apply loan
 	_, d := hGet(t, app, "/api/v1/members", chair)
-	var ml struct{ Data []struct{ ID string `json:"id"` } `json:"data"` }
+	var ml struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
 	json.Unmarshal(d, &ml)
 	memberID := ml.Data[0].ID
 
@@ -307,7 +320,7 @@ func TestNegativeScenarios(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("apply: %d", code)
 	}
-loanID := hExtract(t, d, "data")
+	loanID := hExtract(t, d, "data")
 
 	// NEGATIVE 1: Disburse before approval
 	code, d = hPost(t, app, fmt.Sprintf("/api/v1/loans/%s/disburse", loanID), nil, treasurer)
@@ -338,10 +351,15 @@ loanID := hExtract(t, d, "data")
 		t.Logf("double-disburse: %d (expected non-200)", code)
 	}
 
-	// NEGATIVE 3: Over-repay
-	code, d = hPost(t, app, "/api/v1/repayments", map[string]interface{}{
-		"loan_id": loanID, "amount": 100000.0, "paid_at": "2026-07-11", "payment_method": "CASH",
-	}, treasurer)
+	// NEGATIVE 3: Over-repay via self-service submit (amount > balance).
+	// Link the loan's member to asha's login so submission is authorized.
+	var negUser models.User
+	database.DB.Where("email = ?", "asha@kikundi.tz").First(&negUser)
+	database.DB.Model(&models.Member{}).Where("id = ?", memberID).Update("user_id", negUser.ID)
+	negBorrower := hLogin(t, app, "asha@kikundi.tz", "demo123")
+	code, d = hPost(t, app, "/api/v1/loans/"+loanID+"/repayments", map[string]interface{}{
+		"amount": 100000.0, "proof_message": "overpay attempt",
+	}, negBorrower)
 	if code == 201 {
 		t.Error("over-repay should fail (amount > balance)")
 	} else {
@@ -471,7 +489,9 @@ func TestLoginRateLimiting(t *testing.T) {
 		if i == 6 && resp.StatusCode != 429 {
 			t.Errorf("attempt %d: expected 429 (rate limited), got %d", i, resp.StatusCode)
 		} else if i == 6 {
-			var r struct{ Message string `json:"message"` }
+			var r struct {
+				Message string `json:"message"`
+			}
 			json.Unmarshal(data, &r)
 			t.Logf("Rate limit message: %s", r.Message)
 		}

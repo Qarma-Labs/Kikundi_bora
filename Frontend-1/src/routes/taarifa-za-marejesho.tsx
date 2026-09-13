@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
-import { useRepayments, useRecordRepayment, usePendingRepayments, useApproveRepayment, useRejectRepayment } from "@/hooks/use-repayments";
-import { useLoans } from "@/hooks/use-loans";
+import { useRepayments, usePendingRepayments, useApproveRepayment, useRejectRepayment } from "@/hooks/use-repayments";
 import { useAuth } from "@/lib/auth-provider";
 import { useAppModal } from "@/components/AppModal";
 import { groupsApi } from "@/api/groups";
-import { Field } from "@/components/Field";
+import { withUploadToken } from "@/api/upload";
+import type { Repayment } from "@/api/types";
 import { tzs, tarehe } from "@/lib/format";
 import { blockAdminFromPage, requireAuth } from "@/lib/role-guards";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, X, Receipt, Loader2, Wallet, MessageSquare, Check, Clock } from "lucide-react";
+import { X, Receipt, Loader2, MessageSquare, Check, Clock, Eye, ImageIcon } from "lucide-react";
 
 export const Route = createFileRoute("/taarifa-za-marejesho")({
   beforeLoad: () => { requireAuth(); blockAdminFromPage(); },
@@ -20,29 +20,28 @@ export const Route = createFileRoute("/taarifa-za-marejesho")({
 
 function TaarifaZaMarejeshoPage() {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<Repayment | null>(null);
   const isHazina = user?.role === "treasurer";
 
   const { data: repaymentsData, isLoading, error, refetch } = useRepayments({ limit: 200 });
   const repayments = repaymentsData?.data ?? [];
-  const jumla = repayments.reduce((s, r) => s + Number(r.amount), 0);
+  // Total counts CONFIRMED repayments only — pending submissions must never
+  // inflate the received figure.
+  const confirmed = repayments.filter((r) => r.status === "CONFIRMED");
+  const pendingCount = repayments.filter((r) => r.status === "PENDING").length;
+  const jumla = confirmed.reduce((s, r) => s + Number(r.amount), 0);
 
   return (
     <AppShell
       title="Taarifa Za Marejesho"
-      subtitle={isHazina ? "Pokea na thibitisha malipo ya mikopo" : "Angalia taarifa za marejesho ya wanachama"}
-      action={
-        isHazina && (
-          <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-2 text-sm font-semibold text-accent-foreground">
-            <Plus className="h-4 w-4" /> Pokea
-          </button>
-        )
-      }
+      subtitle="Angalia taarifa za marejesho ya wanachama"
     >
       <div className="card-surface p-5">
-        <p className="text-xs text-muted-foreground">Jumla ya marejesho yaliyopokelewa</p>
+        <p className="text-xs text-muted-foreground">Jumla ya marejesho yaliyopokelewa (yaliyothibitishwa)</p>
         <p className="mt-1 font-display text-3xl font-extrabold text-success">{tzs(jumla)}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{repayments.length} malipo</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {confirmed.length} yaliyothibitishwa{pendingCount > 0 ? ` · ${pendingCount} yanasubiri` : ""}
+        </p>
       </div>
 
       {isHazina && <PendingReceiptSection />}
@@ -78,7 +77,17 @@ function TaarifaZaMarejeshoPage() {
                   <Receipt className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.member?.full_name ?? `Mwanachama #${r.member_id}`}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium">{r.member?.full_name ?? `Mwanachama #${r.member_id}`}</p>
+                    {r.status === "PENDING" && (
+                      <span className="chip bg-amber-100 text-amber-700 text-[10px] inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> Inasubiri
+                      </span>
+                    )}
+                    {r.status === "REJECTED" && (
+                      <span className="chip bg-destructive/10 text-destructive text-[10px]">Imekataliwa</span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">{tarehe(r.paid_at)} · Salio: {tzs(r.balance_after)}</p>
                   {r.notes && (
                     <p className="text-xs text-muted-foreground/70 mt-0.5 flex items-center gap-1">
@@ -86,6 +95,14 @@ function TaarifaZaMarejeshoPage() {
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={() => setDetail(r)}
+                  title="Tazama maelezo ya rejesho"
+                  aria-label={`Maelezo ya rejesho ${tzs(r.amount)}`}
+                  className="rounded-lg p-1.5 text-primary hover:bg-primary/10"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
                 <p className="shrink-0 text-sm font-semibold text-success">+{tzs(r.amount)}</p>
               </div>
             ))}
@@ -94,8 +111,53 @@ function TaarifaZaMarejeshoPage() {
         </>
       )}
 
-      {open && isHazina && <Form onClose={() => setOpen(false)} />}
+      {detail && <RepaymentDetailsModal repayment={detail} onClose={() => setDetail(null)} />}
     </AppShell>
+  );
+}
+
+function RepaymentDetailsModal({ repayment: r, onClose }: { repayment: Repayment; onClose: () => void }) {
+  const proofSrc = withUploadToken(r.proof_image_url);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center" onClick={onClose}>
+      <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-card p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-display text-lg font-semibold">Maelezo ya Rejesho</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-success/15 text-success">
+            <Receipt className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-display text-xl font-bold">{tzs(r.amount)}</p>
+            <p className="text-xs text-muted-foreground">{r.member?.full_name ?? `Mwanachama #${r.member_id}`}</p>
+          </div>
+          <span className={`ml-auto chip text-[10px] ${r.status === "CONFIRMED" ? "bg-success/15 text-success" : r.status === "REJECTED" ? "bg-destructive/10 text-destructive" : "bg-amber-100 text-amber-700"}`}>
+            {r.status === "CONFIRMED" ? "Imethibitishwa" : r.status === "REJECTED" ? "Imekataliwa" : "Inasubiri uthibitisho"}
+          </span>
+        </div>
+        <dl className="mt-4 space-y-2 text-sm">
+          <div className="flex justify-between rounded-lg bg-muted/50 px-3 py-2"><dt className="text-muted-foreground">Tarehe ya malipo</dt><dd className="font-medium">{tarehe(r.paid_at)}</dd></div>
+          <div className="flex justify-between rounded-lg bg-muted/50 px-3 py-2"><dt className="text-muted-foreground">Njia</dt><dd className="font-medium">{r.payment_method}</dd></div>
+          <div className="flex justify-between rounded-lg bg-muted/50 px-3 py-2"><dt className="text-muted-foreground">Salio baada</dt><dd className="font-medium">{tzs(r.balance_after)}</dd></div>
+          {r.notes && <div className="rounded-lg bg-muted/50 px-3 py-2"><dt className="text-muted-foreground text-xs">Maelezo</dt><dd className="mt-0.5 font-medium">{r.notes}</dd></div>}
+          {r.proof_message && <div className="rounded-lg bg-muted/50 px-3 py-2"><dt className="text-muted-foreground text-xs">Ujumbe wa muamala</dt><dd className="mt-0.5 font-medium">“{r.proof_message}”</dd></div>}
+          {r.review_reason && <div className="rounded-lg bg-destructive/10 px-3 py-2"><dt className="text-xs text-destructive">Sababu ya kukataliwa</dt><dd className="mt-0.5 font-medium text-destructive">{r.review_reason}</dd></div>}
+        </dl>
+        {proofSrc && (
+          <a href={proofSrc} target="_blank" rel="noreferrer" className="mt-3 block">
+            <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-muted-foreground"><ImageIcon className="h-3.5 w-3.5" /> Picha ya uthibitisho</p>
+            <img src={proofSrc} alt="uthibitisho wa malipo" className="max-h-64 w-full rounded-xl border border-border object-contain" />
+          </a>
+        )}
+        {r.status === "PENDING" && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Rejesho hili bado halijaidhinishwa — halijapunguza salio. Mweka Hazina atalithibitisha kwenye “Thibitisha Marejesho”.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -215,94 +277,6 @@ function PendingReceiptSection() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function Form({ onClose }: { onClose: () => void }) {
-  const recordRepayment = useRecordRepayment();
-  const { data: loansData } = useLoans({ status: "OUTSTANDING", limit: 100 });
-  const openLoans = loansData?.data ?? [];
-
-  const [loanId, setLoanId] = useState("");
-  useEffect(() => { if (!loanId && openLoans[0]?.id) setLoanId(String(openLoans[0].id)); }, [openLoans]);
-  const selectedLoan = openLoans.find((l) => String(l.id) === loanId);
-  const bal = Number(selectedLoan?.balance_remaining ?? 0);
-
-  const [f, setF] = useState({ kiasi: "", tarehe: new Date().toISOString().slice(0, 10), maelezo: "" });
-  const kiasiN = Number(f.kiasi);
-  const valid = !isNaN(kiasiN) && isFinite(kiasiN) && kiasiN > 0;
-  const tooMuch = valid && kiasiN > bal;
-  const [submitErr, setSubmitErr] = useState<string | null>(null);
-
-  const resetForm = () => { setF({ kiasi: "", tarehe: new Date().toISOString().slice(0, 10), maelezo: "" }); setSubmitErr(null); onClose(); };
-
-  const handleSubmit = async () => {
-    if (!loanId || !valid) return;
-    setSubmitErr(null);
-    try {
-      await recordRepayment.mutateAsync({
-        loan_id: loanId, amount: kiasiN, paid_at: f.tarehe, payment_method: "CASH", notes: f.maelezo || undefined,
-      });
-      resetForm();
-    } catch (e: unknown) {
-      setSubmitErr(e instanceof Error ? e.message : "Imeshindikana kurekodi malipo");
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center" onClick={resetForm}>
-      <div className="w-full max-w-md rounded-t-3xl bg-card p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-display text-lg font-semibold">Pokea Marejesho</h3>
-          <button onClick={resetForm} className="rounded-lg p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
-        </div>
-        {submitErr && <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{submitErr}</p>}
-        {openLoans.length === 0 ? (
-          <div className="rounded-xl bg-muted p-4 text-center text-sm text-muted-foreground space-y-2">
-            <Wallet className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p>Hakuna mikopo iliyo wazi kwa sasa.</p>
-          </div>
-        ) : (
-          <>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Mkopo</span>
-              <select value={loanId} onChange={(e) => { setLoanId(e.target.value); setSubmitErr(null); }} className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm">
-                {openLoans.map((l) => (
-                  <option key={l.id} value={l.id}>{l.member?.full_name ?? `Mkopo #${l.id}`} · Salio: {tzs(l.balance_remaining ?? 0)}</option>
-                ))}
-              </select>
-            </label>
-            <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted p-3 text-xs">
-              <div><p className="text-muted-foreground">Salio la mkopo</p><p className="font-semibold">{tzs(bal)}</p></div>
-              <div><p className="text-muted-foreground">Mwisho</p><p className="font-semibold">{selectedLoan ? tarehe(selectedLoan.due_date) : "—"}</p></div>
-            </div>
-            <div className="mt-3"><Field label="Kiasi cha malipo (TZS)" value={f.kiasi} onChange={(v) => { setF({ ...f, kiasi: v }); setSubmitErr(null); }} type="number" /></div>
-            <div className="mt-3"><Field label="Tarehe ya malipo" value={f.tarehe} onChange={(v) => setF({ ...f, tarehe: v })} type="date" /></div>
-            <div className="mt-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Maelezo / Comment</span>
-                <textarea
-                  value={f.maelezo}
-                  onChange={(e) => setF({ ...f, maelezo: e.target.value })}
-                  placeholder="Andika maelezo ya malipo haya..."
-                  rows={2}
-                  className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
-                />
-              </label>
-            </div>
-            {tooMuch && <p className="mt-2 text-xs text-destructive">Kiasi kinazidi salio la mkopo ({tzs(bal)}).</p>}
-            <button
-              disabled={!loanId || !valid || tooMuch || recordRepayment.isPending}
-              onClick={handleSubmit}
-              className="mt-5 w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50 inline-flex items-center justify-center gap-2"
-            >
-              {recordRepayment.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Hifadhi Malipo
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }

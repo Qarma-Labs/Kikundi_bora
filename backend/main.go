@@ -344,7 +344,8 @@ func main() {
 
 	repayments := protected.Group("/repayments")
 	repayments.Get("/", repayHandler.List)
-	repayments.Post("/", middleware.RequirePosition(models.PositionTreasurer), repayHandler.Record)
+	// NOTE: direct treasurer recording was removed — every repayment now
+	// flows submit (member) → approve (treasurer). No bypass path remains.
 	// Self-service lifecycle (treasurer ONLY — same RBAC as contribution
 	// approval and fine collection: not mwenyekiti/katibu's action).
 	repayments.Patch("/:id/approve", middleware.RequireRoles(models.RoleTreasurer), repayHandler.Approve)

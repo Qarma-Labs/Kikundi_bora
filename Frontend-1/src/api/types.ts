@@ -324,16 +324,6 @@ export interface PendingRepayment {
   loan?: { id: string; amount?: string | number; approved_amount?: string | number; balance_remaining?: string | number; status?: string; due_date?: string };
 }
 
-export interface RecordRepaymentRequest {
-  loan_id: string;
-  amount: number;
-  paid_at: string;
-  payment_method: "CASH" | "BANK" | "MOBILE_MONEY";
-  reference_number?: string;
-  receipt_url?: string;
-  notes?: string;
-}
-
 export interface RepaymentResponse {
   repayment_id: string;
   balance_after: number;

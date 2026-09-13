@@ -20,18 +20,18 @@ type RegisterRequest struct {
 }
 
 type AuthResponse struct {
-	Token             string `json:"token"`
-	User              *User  `json:"user"`
-	ExpiresAt         string `json:"expires_at"`
-	FirstLoginRequired bool  `json:"first_login_required,omitempty"`
+	Token              string `json:"token"`
+	User               *User  `json:"user"`
+	ExpiresAt          string `json:"expires_at"`
+	FirstLoginRequired bool   `json:"first_login_required,omitempty"`
 }
 
 // MeResponse extends User with member context and leadership roles for dual-plane UI.
 type MeResponse struct {
 	*User
-	MemberID    *string          `json:"member_id,omitempty"`
-	MemberCode  *string          `json:"member_code,omitempty"`
-	Leadership  []string         `json:"leadership"`
+	MemberID   *string  `json:"member_id,omitempty"`
+	MemberCode *string  `json:"member_code,omitempty"`
+	Leadership []string `json:"leadership"`
 }
 
 type UpdateProfileRequest struct {
@@ -113,16 +113,6 @@ type RejectLoanRequest struct {
 	Reason string `json:"reason" validate:"required"`
 }
 
-type RecordRepaymentRequest struct {
-	LoanID          string          `json:"loan_id" validate:"required"`
-	Amount          decimal.Decimal `json:"amount" validate:"required,gt=0"`
-	PaidAt          string          `json:"paid_at" validate:"required"`
-	PaymentMethod   string          `json:"payment_method" validate:"required,oneof=CASH BANK MOBILE_MONEY"`
-	ReferenceNumber string          `json:"reference_number"`
-	ReceiptURL      string          `json:"receipt_url"`
-	Notes           *string         `json:"notes"`
-}
-
 type DashboardSummary struct {
 	TotalActiveMembers          int64           `json:"total_active_members"`
 	TotalContributions          decimal.Decimal `json:"total_contributions"`
@@ -189,9 +179,9 @@ type MemberNoResponse struct {
 }
 
 type RepaymentResponse struct {
-	RepaymentID string          `json:"repayment_id"`
+	RepaymentID  string          `json:"repayment_id"`
 	BalanceAfter decimal.Decimal `json:"balance_after"`
-	LoanClosed  bool            `json:"loan_closed"`
+	LoanClosed   bool            `json:"loan_closed"`
 }
 
 type NotificationReadRequest struct {
@@ -233,12 +223,12 @@ type LoanReviewResponse struct {
 }
 
 type LoanCommitteeDashboard struct {
-	PendingReviews    int64 `json:"pending_reviews"`
-	LoansUnderReview  int64 `json:"loans_under_review"`
-	ApprovedLoans     int64 `json:"approved_loans"`
-	RejectedLoans     int64 `json:"rejected_loans"`
-	MyReviews         int64 `json:"my_reviews"`
-	CommitteeMembers  int64 `json:"committee_members"`
+	PendingReviews   int64 `json:"pending_reviews"`
+	LoansUnderReview int64 `json:"loans_under_review"`
+	ApprovedLoans    int64 `json:"approved_loans"`
+	RejectedLoans    int64 `json:"rejected_loans"`
+	MyReviews        int64 `json:"my_reviews"`
+	CommitteeMembers int64 `json:"committee_members"`
 }
 
 type LoanCommitteeHistoryRow struct {
@@ -254,12 +244,12 @@ type LoanCommitteeHistoryRow struct {
 }
 
 type CommitteeActivityReport struct {
-	TotalReviews       int64                        `json:"total_reviews"`
-	ApprovalRate       float64                      `json:"approval_rate"`
-	RejectionRate      float64                      `json:"rejection_rate"`
-	ReviewsByMember    []CommitteeMemberReviewCount `json:"reviews_by_member"`
-	CommitteeComposition []CommitteeCompositionEntry `json:"committee_composition"`
-	ReviewHistory      []LoanCommitteeHistoryRow    `json:"review_history"`
+	TotalReviews         int64                        `json:"total_reviews"`
+	ApprovalRate         float64                      `json:"approval_rate"`
+	RejectionRate        float64                      `json:"rejection_rate"`
+	ReviewsByMember      []CommitteeMemberReviewCount `json:"reviews_by_member"`
+	CommitteeComposition []CommitteeCompositionEntry  `json:"committee_composition"`
+	ReviewHistory        []LoanCommitteeHistoryRow    `json:"review_history"`
 }
 
 type CommitteeMemberReviewCount struct {

@@ -1,7 +1,6 @@
 import { api } from "./client";
 import type {
   Repayment,
-  RecordRepaymentRequest,
   SubmitRepaymentRequest,
   PendingRepayment,
   RepaymentResponse,
@@ -22,12 +21,6 @@ export const repaymentsApi = {
     if (params?.member_id) q.member_id = String(params.member_id);
     return api.get<PaginatedResponse<Repayment>>("/repayments", q);
   },
-  record: (data: RecordRepaymentRequest) =>
-    api.post<{ message: string; data: RepaymentResponse }>(
-      "/repayments",
-      data
-    ),
-
   /** Member self-service: submit against OWN disbursed loan (starts PENDING). */
   submit: (loanId: string, data: SubmitRepaymentRequest) =>
     api.post<{ message: string; data: Repayment }>(
