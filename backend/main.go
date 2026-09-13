@@ -14,9 +14,9 @@ import (
 	"kikundibora/handlers"
 	"kikundibora/ledger"
 	"kikundibora/middleware"
+	"kikundibora/migrations"
 	"kikundibora/models"
 	"kikundibora/services"
-	"kikundibora/migrations"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -55,9 +55,10 @@ func main() {
 		log.Fatalf("FATAL: versioned migrations failed: %v", err)
 	}
 
-	// Background scheduler: contribution due-date notifications
-	services.StartScheduler()
-
+	// One-off CLI modes exit HERE — before the scheduler, ledger pool, and
+	// HTTP server start. This ordering is load-bearing: "Scheduler started"
+	// or "Server starting" must NEVER appear after a -migrate/-seed/
+	// -migrations invocation (regression: deploy one-off hanging forever).
 	if *migrateFlag {
 		database.Seed()
 		log.Println("Migration complete. Exiting.")
@@ -84,6 +85,9 @@ func main() {
 		log.Println("Seed complete. Exiting.")
 		os.Exit(0)
 	}
+
+	// Background scheduler: contribution due-date notifications
+	services.StartScheduler()
 
 	// ---- Ledger core (event-sourced, append-only) -------------------------
 	lg, ledgerGroupID := ledgerInit()
