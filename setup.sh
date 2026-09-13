@@ -148,12 +148,14 @@ for i in $(seq 1 30); do
 done
 
 # -----------------------------------------------------------------------------
-say "[6/7] Running database migration + seed (idempotent)"
+say "[6/7] Running database migration + seed (idempotent, VISIBLE output)"
 # -----------------------------------------------------------------------------
 # migrate is idempotent (AutoMigrate never drops tables + Seed skips
-# existing rows), so always run it: existing databases need new tables
-# (e.g. fine_settings/fines) even when other tables already exist.
-docker exec kikundi-backend /app/kikundi-api -migrate > /dev/null 2>&1 \
+# existing rows + the versioned registry only applies new entries), so always
+# run it: existing databases need new tables even when other tables exist.
+# Output is intentionally VISIBLE (per-entry [APPLIED]/[SKIP] lines) — never
+# redirect it to /dev/null, so operators can confirm exactly what ran.
+docker exec kikundi-backend /app/kikundi-api -migrate \
   || die "migration failed. Run: docker exec kikundi-backend /app/kikundi-api -migrate"
 ok "tables migrated and demo data seeded (idempotent)"
 

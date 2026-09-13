@@ -84,8 +84,9 @@ jobs:
 
 #   deploy:
 #     needs: build-and-push
-#   Job 2: pull on the VPS and restart (same manual process as setup.sh,
-#   automated: pull -> up -> migrate -> health-check).
+#   Job 2: pull on the VPS, backup, migrate with the new image, THEN restart
+#   (same manual process as setup.sh, automated:
+#   pull -> backup -> migrate -> up -> health-check).
 #   NOTE: git pull on the VPS is retried with backoff (it once failed with
 #   "Failed to connect to github.com port 443" — flaky VPS egress), and the
 #   compose files are always scp'd fresh from the checkout so a deploy never
@@ -128,7 +129,7 @@ jobs:
               set -euo pipefail
               cd "${{ secrets.VPS_DEPLOY_PATH }}"
 
-              echo "==> 1/6 git pull (compose files are scp'd separately — this is best-effort)"
+              echo "==> 1/10 git pull (compose files are scp'd separately — this is best-effort)"
               # The scp step above overwrites these exact paths, so reset any
               # local edits + the untracked template copy first — otherwise
               # the merge aborts ("would be overwritten by merge").
@@ -152,10 +153,10 @@ jobs:
               GHCR_OWNER="$(echo "$GHCR_OWNER" | tr '[:upper:]' '[:lower:]')"
               export TAG GHCR_OWNER
 
-              echo "==> 2/6 docker login to GHCR (token lives only in this session)"
+              echo "==> 2/10 docker login to GHCR (token lives only in this session)"
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
-              echo "==> 3/6 wire db password (same rule as setup.sh: compose reads it from the host env, backend from backend/.env)"
+              echo "==> 3/10 wire db password (same rule as setup.sh: compose reads it from the host env, backend from backend/.env)"
               ENV_FILE="backend/.env"
               if [ ! -f "$ENV_FILE" ]; then
                 echo "WARN: $ENV_FILE missing; rebuilding from backend/.env.example"
@@ -175,7 +176,7 @@ jobs:
               [ -n "$POSTGRES_PASSWORD" ] || { echo "ERROR: DB_PASSWORD empty in $ENV_FILE"; exit 1; }
               export POSTGRES_PASSWORD
 
-              echo "==> 4/6 ensure public origin in backend CORS (browsers block the SPA otherwise)"
+              echo "==> 4/10 ensure public origin in backend CORS (browsers block the SPA otherwise)"
               PUBLIC_ORIGIN="https://$PUBLIC_HOST"
               CORS_CHANGED=0
               if grep -q '^CORS_ORIGINS=' "$ENV_FILE"; then
@@ -211,15 +212,35 @@ jobs:
                 return 1
               }
 
-              echo "==> 5/7 free backend host port (docker-proxy collisions break deploy)"
+              echo "==> 5/10 free backend host port (docker-proxy collisions break deploy)"
               if ! free_backend_port_5050; then
                 echo "ERROR: host port 127.0.0.1:5050 is still in use; cannot continue safely"
                 ss -ltnH '( sport = :5050 )'
                 exit 1
               fi
 
-              echo "==> 6/7 pull + restart (127.0.0.1-bound per docker-compose.prod.yml)"
+              echo "==> 6/10 pull new images (no restart yet — migrate runs first)"
               docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+
+              echo "==> 7/10 backup BEFORE migrate (rollback = restore this file)"
+              BACKUP_DIR="${{ secrets.VPS_DEPLOY_PATH }}/deploy-backups"
+              mkdir -p "$BACKUP_DIR"
+              if docker ps --format '{{.Names}}' | grep -qx kikundi-db; then
+                BACKUP_FILE="$BACKUP_DIR/pre-migrate-${TAG}-$(date +%Y%m%d-%H%M%S).sql.gz"
+                docker exec kikundi-db pg_dump -U kikundi kikundi_db | gzip > "$BACKUP_FILE"
+                echo "backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+                ls -t "$BACKUP_DIR"/pre-migrate-*.sql.gz | tail -n +6 | xargs -r rm -f
+              else
+                echo "no existing kikundi-db container — first deploy, nothing to back up."
+              fi
+
+              echo "==> 8/10 migrate with the NEW image BEFORE restart (one-off container)"
+              echo "      (non-zero exit stops the deploy here — live containers keep running untouched)"
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend /app/kikundi-api -migrate
+              echo "migrate OK — applied versions now recorded:"
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backend /app/kikundi-api -migrations
+
+              echo "==> 9/10 restart on the migrated schema (127.0.0.1-bound per docker-compose.prod.yml)"
               # up-with-retry: a stale docker-proxy from the container being
               # replaced can still hold 127.0.0.1:5050 for a few seconds after
               # the guard passed ("failed to bind ... address already in use").
@@ -240,8 +261,7 @@ jobs:
                 exit 1
               fi
 
-              echo "==> 7/7 migrate (idempotent) + health checks"
-              docker exec kikundi-backend /app/kikundi-api -migrate
+              echo "==> 10/10 health checks (no second migrate — it already ran in 8/10)"
               curl -sf http://127.0.0.1:5050/health | grep -q '"status":"ok"'
               echo "backend OK"
               curl -sf http://127.0.0.1:5051/ > /dev/null

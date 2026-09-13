@@ -16,6 +16,7 @@ import (
 	"kikundibora/middleware"
 	"kikundibora/models"
 	"kikundibora/services"
+	"kikundibora/migrations"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migration and seed, then exit")
+	migrationsFlag := flag.Bool("migrations", false, "List applied schema_migrations ledger rows, then exit")
 	seedFlag := flag.Bool("seed", false, "Run seed only (no table drop), then exit")
 	replayLedgerFlag := flag.String("replay-ledger", "", "Rebuild ledger projections from the event log: '' skip, 'group' this group's scope, 'all' every group")
 	backfillLedgerFlag := flag.Bool("backfill-ledger", false, "Post one opening-balance ledger transaction per member for pre-existing PAID contributions (fresh ledger only), then continue")
@@ -45,12 +47,35 @@ func main() {
 	database.EnsureLeadershipSetup()
 	database.EnsureGroupSetup()
 
+	// Versioned schema migrations (ledger in schema_migrations). Runs on
+	// every boot AND under -migrate: idempotent, only new entries apply,
+	// per-entry [APPLIED]/[SKIP] output. A failed entry is fatal — never
+	// serve traffic on a half-migrated schema.
+	if err := migrations.Run(); err != nil {
+		log.Fatalf("FATAL: versioned migrations failed: %v", err)
+	}
+
 	// Background scheduler: contribution due-date notifications
 	services.StartScheduler()
 
 	if *migrateFlag {
 		database.Seed()
 		log.Println("Migration complete. Exiting.")
+		os.Exit(0)
+	}
+
+	if *migrationsFlag {
+		rows, err := migrations.AppliedVersions()
+		if err != nil {
+			log.Fatalf("FATAL: ledger read: %v", err)
+		}
+		if len(rows) == 0 {
+			log.Println("schema_migrations: (empty — no versioned migration recorded yet)")
+		}
+		for _, r := range rows {
+			log.Printf("schema_migrations: %s applied %s — %s",
+				r.Version, r.AppliedAt.Format(time.RFC3339), r.Description)
+		}
 		os.Exit(0)
 	}
 
