@@ -49,6 +49,17 @@ interface Loan {
   /** BUG-2: computed by the backend — which sequential stage this loan awaits. */
   awaiting_role?: "hazina" | "katibu" | "bodi" | "mwenyekiti";
   my_turn?: boolean;
+  term_days: number;
+  interest_enabled: boolean;
+  interest_type?: string;
+  applicable_interest_rate: string | number;
+  interest_amount: string | number;
+  total_repayment: string | number;
+}
+
+function rateLabel(l: Loan): string {
+  if (!l.interest_enabled) return "Hakuna Riba";
+  return `${Number(l.applicable_interest_rate)}% / mwezi`;
 }
 
 function MikopoPage() {
@@ -291,7 +302,21 @@ function MikopoPage() {
                           {new Date(loan.due_date).toLocaleDateString("sw-TZ")}
                         </p>
                       </div>
+                      <div>
+                        <p className="text-muted-foreground">Muda (siku)</p>
+                        <p className="font-semibold">{loan.term_days ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Riba</p>
+                        <p className="font-semibold">{rateLabel(loan)}</p>
+                      </div>
                     </div>
+                    <p className="mt-2 text-sm">
+                      <span className="text-muted-foreground">Jumla ya kurejesha: </span>
+                      <span className="font-semibold">
+                        TZS {Number(loan.total_repayment ?? loan.amount).toLocaleString()}
+                      </span>
+                    </p>
 
                     {/* Approval progress bar */}
                     <div className="mt-3 flex items-center gap-1 text-xs flex-wrap">

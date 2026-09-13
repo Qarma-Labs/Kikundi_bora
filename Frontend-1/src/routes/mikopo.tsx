@@ -1,11 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import {
   useLoans,
   useApplyLoan,
   useConfirmLoanReceived,
 } from "@/hooks/use-loans";
+import { groupsApi, loanSettingsApi } from "@/api/groups";
+import { loansApi } from "@/api/loans";
 import { Field } from "@/components/Field";
 import { tzs, tarehe } from "@/lib/format";
 import { X, Send, Loader2, CheckCircle2 } from "lucide-react";
@@ -116,14 +119,6 @@ function MikopoPage() {
         <p className="mt-1 text-xs text-primary-foreground/70">
           {visible.filter((l) => l.status === "OUTSTANDING").length} mikopo wazi
         </p>
-        {myMemberId && (
-          <button
-            onClick={() => setOpenRequest(true)}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-primary shadow-lg transition-transform hover:scale-[1.01] sm:w-auto"
-          >
-            <Send className="h-4 w-4" /> Omba Mkopo Mpya
-          </button>
-        )}
       </div>
 
       {isLoading && (
@@ -197,7 +192,24 @@ function MikopoPage() {
                   <p className="text-muted-foreground">Mwisho</p>
                   <p className="font-semibold">{tarehe(l.due_date)}</p>
                 </div>
+                <div>
+                  <p className="text-muted-foreground">Muda (siku)</p>
+                  <p className="font-semibold">{l.term_days ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Riba</p>
+                  <p className="font-semibold">
+                    {l.interest_enabled ? `${Number(l.applicable_interest_rate)}%` : "Hakuna"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Jumla</p>
+                  <p className="font-semibold">{tzs(Number(l.total_repayment ?? l.amount))}</p>
+                </div>
               </div>
+              {(l.status === "OUTSTANDING" || l.status === "CLOSED") && l.borrower_confirmed_at && (
+                <LoanSchedule loanId={l.id} interestFree={!l.interest_enabled} />
+              )}
               {l.status === "OUTSTANDING" && (
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
@@ -269,6 +281,48 @@ function MikopoPage() {
   );
 }
 
+/** Repayment schedule for a disbursed + confirmed loan (Mikopo Yangu). */
+function LoanSchedule({ loanId, interestFree }: { loanId: string; interestFree: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = useQuery({
+    queryKey: ["loans", "schedule", loanId],
+    queryFn: () => loansApi.schedule(loanId),
+    enabled: open,
+  });
+  const rows = data?.data ?? [];
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-xs font-semibold text-primary"
+      >
+        {open ? "Ficha ratiba ya marejesho ▴" : "Ona ratiba ya marejesho ▾"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {isLoading && <p className="text-xs text-muted-foreground">Inapakia ratiba…</p>}
+          {rows.map((r) => (
+            <div key={r.id} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
+              <span className="font-semibold">Awamu {r.number}</span>
+              <span className="text-muted-foreground">{tarehe(r.due_date)}</span>
+              <span className="font-semibold">{tzs(Number(r.total_amount))}</span>
+              <span className={`chip text-[10px] ${r.status === "PAID" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                {r.status === "PAID" ? "Imelipwa" : "Inasubiri"}
+              </span>
+            </div>
+          ))}
+          {rows.length > 0 && interestFree && (
+            <p className="text-[11px] text-success">Huu ni mkopo usio na riba — kila awamu ni sehemu ya kiasi kikuu pekee.</p>
+          )}
+          {rows.length === 0 && !isLoading && (
+            <p className="text-xs text-muted-foreground">Hakuna ratiba (mkopo wa zamani kabla ya mfumo wa ratiba).</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function statusClass(s: LoanStatus) {
   switch (s) {
     case "PENDING":
@@ -288,6 +342,14 @@ function statusClass(s: LoanStatus) {
   }
 }
 
+/** Client-side preview of amortized reducing-balance interest (display only). */
+function equalInstallmentInterest(principal: number, monthlyRate: number, months: number): number {
+  if (monthlyRate <= 0 || months <= 0) return 0;
+  const pow = Math.pow(1 + monthlyRate, months);
+  const payment = (principal * monthlyRate * pow) / (pow - 1);
+  return Math.round((payment * months - principal) * 100) / 100;
+}
+
 function RequestForm({
   memberId,
   onClose,
@@ -296,20 +358,46 @@ function RequestForm({
   onClose: () => void;
 }) {
   const applyLoan = useApplyLoan();
-  const due = new Date();
-  due.setMonth(due.getMonth() + 6);
+  const { data: loanSettingsData } = useQuery({
+    queryKey: ["groups", "loan-settings-apply"],
+    queryFn: async () => {
+      const g = await groupsApi.current();
+      return loanSettingsApi.get(g.data.id);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const ls = loanSettingsData?.data;
+  const minDays = ls?.min_term_days ?? 30;
+  const maxDays = ls?.max_term_days ?? 365;
+  const interestOn = !!ls?.interest_enabled;
+  const rate = Number(ls?.default_interest_rate ?? 0);
+
   const [f, setF] = useState({
     kiasi: "200000",
-    tareheMwisho: due.toISOString().slice(0, 10),
+    muda: "90",
     maelezo: "",
   });
 
+  const termDays = Math.max(0, parseInt(f.muda) || 0);
+  const principal = Number(f.kiasi) || 0;
+  // Client-side preview mirrors the backend flat/reducing math (monthly rate
+  // over ceil(term/30) months). The server is authoritative; this is display only.
+  const months = Math.max(1, Math.round(termDays / 30));
+  const previewInterest = !interestOn || principal <= 0 || termDays <= 0
+    ? 0
+    : ls?.interest_type === "reducing"
+      ? equalInstallmentInterest(principal, rate / 100, months)
+      : Math.round(principal * (rate / 100) * months * 100) / 100;
+  const previewTotal = principal + previewInterest;
+  const termValid = termDays >= minDays && termDays <= maxDays;
+
   const handleSubmit = async () => {
+    if (!termValid) return;
     try {
       await applyLoan.mutateAsync({
         member_id: memberId,
-        amount: Number(f.kiasi),
-        due_date: f.tareheMwisho,
+        amount: principal,
+        term_days: termDays,
         purpose: f.maelezo || undefined,
       });
       onClose();
@@ -325,14 +413,39 @@ function RequestForm({
         value={f.kiasi}
         onChange={(v) => setF({ ...f, kiasi: v })}
         type="number"
-      />
-      <div className="mt-3">
+      />      <div className="mt-3">
         <Field
-          label="Tarehe ya kurudisha"
-          value={f.tareheMwisho}
-          onChange={(v) => setF({ ...f, tareheMwisho: v })}
-          type="date"
+          label={`Muda wa Mkopo (siku, ${minDays}–${maxDays})`}
+          value={f.muda}
+          onChange={(v) => setF({ ...f, muda: v })}
+          type="number"
         />
+        {!termValid && termDays > 0 && (
+          <p className="mt-1 text-xs text-destructive">
+            Muda lazima uwe kati ya siku {minDays} na {maxDays}.
+          </p>
+        )}
+      </div>
+      {/* Interest preview: read-only snapshot display, never editable */}
+      <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-sm">
+        {interestOn ? (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Riba (kikundi, /mwezi)</span>
+              <span className="font-semibold">{rate}% ({ls?.interest_type === "reducing" ? "salio linalopungua" : "flat"})</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Riba inayokadiriwa</span>
+              <span className="font-semibold">{tzs(previewInterest)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Jumla ya kurejesha</span>
+              <span className="font-semibold">{tzs(previewTotal)}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs font-semibold text-success">Huu ni mkopo usio na riba — utarejesha {tzs(principal)} pekee.</p>
+        )}
       </div>
       <div className="mt-3">
         <Field
@@ -341,8 +454,11 @@ function RequestForm({
           onChange={(v) => setF({ ...f, maelezo: v })}
         />
       </div>
+      {applyLoan.error && (
+        <p className="mt-2 text-center text-xs text-destructive">{applyLoan.error.message}</p>
+      )}
       <button
-        disabled={applyLoan.isPending}
+        disabled={applyLoan.isPending || !termValid || principal <= 0}
         onClick={handleSubmit}
         className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
       >

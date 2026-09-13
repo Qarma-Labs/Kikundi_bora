@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { requireAuth } from "@/lib/role-guards";
 import { useAuth } from "@/lib/auth-provider";
 import { ContributionSettingsCard } from "@/components/ContributionSettingsCard";
+import { LoanSettingsCard } from "@/components/LoanSettingsCard";
 import { openGroupSetup } from "@/components/OnboardingWizard";
 import { PaymentMethodsCard } from "@/components/PaymentMethodsCard";
 import { PendingApprovalsCard } from "@/components/PendingApprovalsCard";
@@ -117,6 +118,11 @@ function MipangilioPage() {
       {/* Group-operational sections — mwenyekiti/katibu concern, NOT admin.
           Admin is a system-level role (not a group participant). */}
       {!isAdmin && <ContributionSettingsCard />}
+      {!isAdmin && (
+        <div className="mt-4">
+          <LoanSettingsCard />
+        </div>
+      )}
       {!isAdmin && (
         <div className="mt-4">
           <PendingApprovalsCard />

@@ -210,6 +210,22 @@ function PortfolioPage() {
                 <p className="text-muted-foreground">Hali</p>
                 <p className="font-semibold">{statusBadge(selected).label}</p>
               </div>
+              <div>
+                <p className="text-muted-foreground">Muda (siku)</p>
+                <p className="font-semibold">{selected.term_days ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Riba</p>
+                <p className="font-semibold">
+                  {selected.interest_enabled
+                    ? `${Number(selected.interest_rate)}% / mwezi · ${tzs(Number(selected.interest_amount))}`
+                    : "Hakuna Riba"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Jumla ya kurejesha</p>
+                <p className="font-semibold">{tzs(Number(selected.total_repayment ?? selected.principal))}</p>
+              </div>
             </div>
             <div className="border-t pt-3">
               <p className="text-xs font-semibold text-muted-foreground mb-2">
@@ -311,20 +327,27 @@ function OffsetSection({ loan, role }: { loan: PortfolioLoan; role?: string }) {
       {previewQ.isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : preview ? (
-        <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-          <div>
-            <p className="text-muted-foreground">Salio la mkopo</p>
-            <p className="font-semibold">{tzs(Number(preview.outstanding))}</p>
+        <>
+          <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+            <div>
+              <p className="text-muted-foreground">Salio la mkopo{preview.interest_enabled ? " (pamoja na riba)" : ""}</p>
+              <p className="font-semibold">{tzs(Number(preview.outstanding))}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Akiba inayopatikana</p>
+              <p className="font-semibold">{tzs(Number(preview.available_savings))}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Kiasi kitakachokatwa</p>
+              <p className="font-semibold text-destructive">{tzs(Number(preview.offset_amount))}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-muted-foreground">Akiba inayopatikana</p>
-            <p className="font-semibold">{tzs(Number(preview.available_savings))}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Kiasi kitakachokatwa</p>
-            <p className="font-semibold text-destructive">{tzs(Number(preview.offset_amount))}</p>
-          </div>
-        </div>
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            {preview.interest_enabled
+              ? `Kuu: ${tzs(Number(preview.principal))} + Riba ${Number(preview.interest_rate)}%: salio linajumuisha riba.`
+              : "Mkopo huu hauna riba — salio ni kiasi kikuu pekee."}
+          </p>
+        </>
       ) : null}
       {!preview?.eligible && preview?.reason && (
         <p className="text-xs text-muted-foreground mb-2">{preview.reason}</p>
@@ -468,6 +491,20 @@ function PortfolioRow({ loan, onClick }: { loan: PortfolioLoan; onClick: () => v
           <p className={`font-semibold ${loan.is_overdue ? "text-destructive" : ""}`}>
             {tarehe(loan.due_date)}
           </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Muda (siku)</p>
+          <p className="font-semibold">{loan.term_days ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Riba</p>
+          <p className="font-semibold">
+            {loan.interest_enabled ? `${Number(loan.interest_rate)}% / mwezi` : "Hakuna Riba"}
+          </p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-muted-foreground">Jumla ya kurejesha</p>
+          <p className="font-semibold">{tzs(Number(loan.total_repayment ?? loan.principal))}</p>
         </div>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">

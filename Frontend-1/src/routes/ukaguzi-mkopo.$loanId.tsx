@@ -165,6 +165,22 @@ function UkaguziMkopoPage() {
                 <p className="font-semibold">{tarehe(loan.due_date)}</p>
               </div>
               <div>
+                <p className="text-muted-foreground">Muda wa Mkopo (siku)</p>
+                <p className="font-semibold">{loan.term_days ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Riba</p>
+                <p className="font-semibold">
+                  {loan.interest_enabled
+                    ? `${Number(loan.applicable_interest_rate)}% / mwezi (${loan.interest_type === "reducing" ? "salio linalopungua" : "flat"})`
+                    : "Hakuna Riba"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Jumla ya Kurejesha</p>
+                <p className="font-semibold text-lg">{tzs(Number(loan.total_repayment ?? loan.amount))}</p>
+              </div>
+              <div>
                 <p className="text-muted-foreground">Tarehe ya Kuomba</p>
                 <p className="font-semibold">{tarehe(loan.applied_at)}</p>
               </div>

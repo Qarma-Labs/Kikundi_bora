@@ -387,6 +387,7 @@ func (h *LoanCommitteeHandler) GetLoan(c *fiber.Ctx) error {
 		"outstanding_balance": outstandingBalance,
 		"committee_members":   roster,
 		"pending_reviewers":   pendingReviewers,
+		"installments":        loanInstallmentsOf(loan.ID),
 	})
 }
 
@@ -526,6 +527,13 @@ func (h *LoanCommitteeHandler) SubmitReview(c *fiber.Ctx) error {
 			if loan.ApprovedAmount == nil {
 				loan.ApprovedAmount = &loan.Amount
 			}
+			if loan.InterestEnabled {
+				loan.InterestAmount = services.CalcLoanInterest(
+					*loan.ApprovedAmount, loan.ApplicableInterestRate, loan.TermDays, loan.InterestType, true)
+			} else {
+				loan.InterestAmount = decimal.Zero
+			}
+			loan.TotalRepayment = loan.ApprovedAmount.Add(loan.InterestAmount)
 			loan.ReviewedBy = &userID
 			loan.ReviewedAt = &now
 			if err := tx.Save(&loan).Error; err != nil {
@@ -623,6 +631,13 @@ func (h *LoanCommitteeHandler) SubmitReview(c *fiber.Ctx) error {
 			if loan.ApprovedAmount == nil {
 				loan.ApprovedAmount = &loan.Amount
 			}
+			if loan.InterestEnabled {
+				loan.InterestAmount = services.CalcLoanInterest(
+					*loan.ApprovedAmount, loan.ApplicableInterestRate, loan.TermDays, loan.InterestType, true)
+			} else {
+				loan.InterestAmount = decimal.Zero
+			}
+			loan.TotalRepayment = loan.ApprovedAmount.Add(loan.InterestAmount)
 			loan.ReviewedBy = &userID
 			loan.ReviewedAt = &now
 		} else {
@@ -944,6 +959,25 @@ func (h *LoanCommitteeHandler) isEligibleCommitteeVoter(db *gorm.DB, userID stri
 		Where("user_id = ? AND is_active = TRUE", userID).
 		Count(&appointed)
 	return appointed > 0
+}
+
+// loanInstallmentsOf lists a loan's repayment schedule rows in due order.
+func loanInstallmentsOf(loanID string) []models.LoanInstallment {
+	var out []models.LoanInstallment
+	database.DB.Where("loan_id = ?", loanID).Order("number ASC").Find(&out)
+	return out
+}
+
+// loanScheduleOverdue reports whether an OUTSTANDING loan has any scheduled
+// installment past due and unpaid. Overdue keys off the schedule — never off
+// an unrelated timer.
+func loanScheduleOverdue(loanID string, today time.Time) bool {
+	today = dateOnlyOf(today)
+	var n int64
+	database.DB.Model(&models.LoanInstallment{}).
+		Where("loan_id = ? AND due_date < ? AND paid_amount < total_amount", loanID, today).
+		Count(&n)
+	return n > 0
 }
 
 // committeeRoster returns distinct eligible voters with names, optionally

@@ -21,19 +21,33 @@ func NewGroupSettingsHandler() *GroupSettingsHandler {
 }
 
 func loadPendingProposal(groupID string) *models.GroupSettingProposal {
-	var p models.GroupSettingProposal
-	if err := database.DB.
+	return loadPendingProposalOfKind(groupID, "")
+}
+
+// loadPendingProposalOfKind returns the latest PENDING proposal of a given
+// kind ("" = any kind, legacy behavior). One PENDING proposal may exist PER
+// KIND — e.g. a pending contribution proposal must not block a loan-settings
+// proposal. Legacy rows with an empty kind count as contribution proposals.
+func loadPendingProposalOfKind(groupID, kind string) *models.GroupSettingProposal {
+	q := database.DB.
 		Preload("Proposer", func(db *gorm.DB) *gorm.DB { return db.Select("id, name, role") }).
-		Where("group_id = ? AND status = ?", groupID, models.ProposalPending).
-		Order("created_at DESC").
-		First(&p).Error; err != nil {
+		Where("group_id = ? AND status = ?", groupID, models.ProposalPending)
+	if kind != "" {
+		if kind == models.ProposalKindContribution {
+			q = q.Where("(proposal_kind = ? OR proposal_kind = '' OR proposal_kind IS NULL)", kind)
+		} else {
+			q = q.Where("proposal_kind = ?", kind)
+		}
+	}
+	var p models.GroupSettingProposal
+	if err := q.Order("created_at DESC").First(&p).Error; err != nil {
 		return nil
 	}
 	return &p
 }
 
 func pendingProposalOfKind(groupID, kind string) *models.GroupSettingProposal {
-	p := loadPendingProposal(groupID)
+	p := loadPendingProposalOfKind(groupID, kind)
 	if p == nil {
 		return nil
 	}
@@ -233,8 +247,8 @@ func (h *GroupSettingsHandler) Propose(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": err.Error()})
 	}
 
-	// Only one PENDING proposal at a time
-	if existing := loadPendingProposal(g.ID); existing != nil {
+	// One PENDING contribution proposal at a time (other kinds are independent).
+	if existing := loadPendingProposalOfKind(g.ID, models.ProposalKindContribution); existing != nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"message": "Kuna pendekezo lililopo bado halijajibiwa. Katibu lazima alipe Wakati wa kwanza kabla ya pendekezo jipya.",
 			"data":    existing,
@@ -282,7 +296,12 @@ func (h *GroupSettingsHandler) Approve(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Kikundi hakijapatikana"})
 	}
 
-	proposal := loadPendingProposal(g.ID)
+	proposal := loadPendingProposalOfKind(g.ID, models.ProposalKindContribution)
+	if proposal == nil {
+		// Legacy fallback: fines proposals (never created via API anymore)
+		// were approved through this same endpoint.
+		proposal = loadPendingProposalOfKind(g.ID, models.ProposalKindFines)
+	}
 	if proposal == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Hakuna pendekezo lililosubiri"})
 	}
@@ -352,7 +371,12 @@ func (h *GroupSettingsHandler) Reject(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Kikundi hakijapatikana"})
 	}
 
-	proposal := loadPendingProposal(g.ID)
+	proposal := loadPendingProposalOfKind(g.ID, models.ProposalKindContribution)
+	if proposal == nil {
+		// Legacy fallback: fines proposals (never created via API anymore)
+		// were approved through this same endpoint.
+		proposal = loadPendingProposalOfKind(g.ID, models.ProposalKindFines)
+	}
 	if proposal == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Hakuna pendekezo lililosubiri"})
 	}

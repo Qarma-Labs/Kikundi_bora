@@ -19,6 +19,7 @@ const (
 const (
 	ProposalKindContribution = "contribution"
 	ProposalKindFines        = "fines"
+	ProposalKindLoan         = "loan"
 )
 
 // GroupSettingProposal is a change to group contribution OR fine settings
@@ -38,6 +39,13 @@ type GroupSettingProposal struct {
 	FineAmount      *decimal.Decimal `gorm:"type:decimal(15,2)" json:"fine_amount,omitempty"`
 	FinePercentage  *decimal.Decimal `gorm:"type:decimal(7,2)" json:"fine_percentage,omitempty"`
 	GracePeriodDays *int             `json:"grace_period_days,omitempty"`
+
+	// Loan-settings payload (kind = loan). Nil on other proposal kinds.
+	LoanInterestEnabled       *bool            `json:"loan_interest_enabled,omitempty"`
+	LoanDefaultInterestRate   *decimal.Decimal `gorm:"type:decimal(7,2)" json:"loan_default_interest_rate,omitempty"`
+	LoanInterestType          *string          `gorm:"type:varchar(20)" json:"loan_interest_type,omitempty"`
+	LoanMinTermDays           *int             `json:"loan_min_term_days,omitempty"`
+	LoanMaxTermDays           *int             `json:"loan_max_term_days,omitempty"`
 
 	Status          string  `gorm:"type:varchar(20);not null;default:'PENDING';index" json:"status"`
 	ProposedBy      string  `gorm:"type:uuid;not null" json:"proposed_by"`
