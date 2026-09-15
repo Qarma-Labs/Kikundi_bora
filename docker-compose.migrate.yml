@@ -1,18 +1,22 @@
 # Kikundi Bora — one-off migration override.
 #
-# WHY THIS FILE EXISTS (deploy hang root-cause fix):
+# WHY THIS FILE EXISTS (defense in depth for one-off migrate runs):
 # the base stack sets `restart: unless-stopped` on the backend service.
-# A plain `docker compose run --rm backend /app/kikundi-api -migrate`
-# inherits that policy, so when the migrate process exits 0 the daemon
-# restarts the one-off container with the same command — migrate runs
-# again, exits, restarts, forever. The SSH deploy step then hangs until
-# its command_timeout kills it (20 wasted minutes), even though the Go
-# code itself exits correctly.
+# One-off migration containers must never be restarted by the daemon, so
+# this override pins `restart: "no"` for them.
 #
-# Include this file ONLY for one-off migrate/ledger invocations so the
-# container is never restarted:
+# (The actual 20-minute deploy hang had a different root cause: the old
+# command spelled out the binary path — `run --rm backend /app/kikundi-api
+# -migrate` — but the image already has exec-form ENTRYPOINT
+# ["/app/kikundi-api"], so compose built argv
+# "/app/kikundi-api /app/kikundi-api -migrate" and Go's flag.Parse stopped
+# at the first non-flag arg: -migrate was never set, the one-off booted the
+# full server, and the step never returned. Fixed in deploy.yml by passing
+# ONLY the flag. This file stays as cheap insurance.)
+#
+# Include this file ONLY for one-off migrate/ledger invocations:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-#     -f docker-compose.migrate.yml run --rm backend /app/kikundi-api -migrate
+#     -f docker-compose.migrate.yml run --rm backend -migrate
 #
 # Normal `up` (app + db) must NOT include this file.
 

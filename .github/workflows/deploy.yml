@@ -254,11 +254,19 @@ jobs:
 
               echo "==> 8/10 migrate with the NEW image BEFORE restart (one-off container)"
               echo "      (non-zero exit stops the deploy here — live containers keep running untouched)"
-              echo "      (docker-compose.migrate.yml pins restart:no — without it the daemon"
-              echo "       restarts the exited one-off (restart:unless-stopped) and the step hangs)"
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm backend /app/kikundi-api -migrate
+              echo "      (docker-compose.migrate.yml pins restart:no so the exited one-off is never restarted)"
+              # NOTE: pass ONLY the flag, never the binary path. The image has
+              # exec-form ENTRYPOINT ["/app/kikundi-api"], so compose appends
+              # our words as CMD — writing the binary path here builds argv
+              # "/app/kikundi-api /app/kikundi-api -migrate", and Go's
+              # flag.Parse STOPS at the first non-flag arg: -migrate would
+              # never be set and the one-off would boot the full server and
+              # hang until timeout. (This exact mistake caused the 20-minute
+              # deploy hang: boot migration output printed, then the server
+              # started and the step never returned.)
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm backend -migrate
               echo "migrate OK — applied versions now recorded:"
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm backend /app/kikundi-api -migrations
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm backend -migrations
 
               echo "==> 9/10 restart on the migrated schema (127.0.0.1-bound per docker-compose.prod.yml)"
               # up-with-retry: a stale docker-proxy from the container being
